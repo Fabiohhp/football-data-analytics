@@ -1,0 +1,508 @@
+{
+  "_comment": "Expected columns and types of Part 1's Gold star schema. scripts/export_gold.py fails on any difference against the live warehouse. Regenerate with --write-contract and commit the diff deliberately: it means the analyses need reviewing.",
+  "tables": {
+    "dim_players": {
+      "columns": [
+        {
+          "name": "player_key",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "understat_player_id",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "player_name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "position",
+          "type": "varchar(10)",
+          "nullable": true
+        },
+        {
+          "name": "current_team_key",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "valid_from",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "valid_to",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "is_current",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "loaded_at",
+          "type": "timestamptz",
+          "nullable": false
+        }
+      ]
+    },
+    "dim_referees": {
+      "columns": [
+        {
+          "name": "referee_key",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "football_data_id",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "referee_name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "nationality",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "loaded_at",
+          "type": "timestamptz",
+          "nullable": false
+        }
+      ]
+    },
+    "dim_stadiums": {
+      "columns": [
+        {
+          "name": "stadium_key",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "stadium_name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "city",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "country",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "capacity",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "loaded_at",
+          "type": "timestamptz",
+          "nullable": false
+        },
+        {
+          "name": "address",
+          "type": "text",
+          "nullable": true
+        }
+      ]
+    },
+    "dim_teams": {
+      "columns": [
+        {
+          "name": "team_key",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "canonical_name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "football_data_name",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "understat_name",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "football_data_id",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "understat_id",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "loaded_at",
+          "type": "timestamptz",
+          "nullable": false
+        }
+      ]
+    },
+    "fact_matches": {
+      "columns": [
+        {
+          "name": "match_key",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "football_data_match_id",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "understat_match_id",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "competition_code",
+          "type": "varchar(10)",
+          "nullable": true
+        },
+        {
+          "name": "competition_name",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "season",
+          "type": "varchar(9)",
+          "nullable": true
+        },
+        {
+          "name": "matchday",
+          "type": "smallint",
+          "nullable": true
+        },
+        {
+          "name": "match_utc",
+          "type": "timestamptz",
+          "nullable": true
+        },
+        {
+          "name": "match_date",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "varchar(20)",
+          "nullable": false
+        },
+        {
+          "name": "home_team_key",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "away_team_key",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "referee_key",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "stadium_key",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "home_goals",
+          "type": "smallint",
+          "nullable": true
+        },
+        {
+          "name": "away_goals",
+          "type": "smallint",
+          "nullable": true
+        },
+        {
+          "name": "home_goals_ht",
+          "type": "smallint",
+          "nullable": true
+        },
+        {
+          "name": "away_goals_ht",
+          "type": "smallint",
+          "nullable": true
+        },
+        {
+          "name": "result",
+          "type": "varchar(10)",
+          "nullable": true
+        },
+        {
+          "name": "home_xg",
+          "type": "numeric(8,4)",
+          "nullable": true
+        },
+        {
+          "name": "away_xg",
+          "type": "numeric(8,4)",
+          "nullable": true
+        },
+        {
+          "name": "home_npxg",
+          "type": "numeric(8,4)",
+          "nullable": true
+        },
+        {
+          "name": "away_npxg",
+          "type": "numeric(8,4)",
+          "nullable": true
+        },
+        {
+          "name": "home_ppda",
+          "type": "numeric(8,4)",
+          "nullable": true
+        },
+        {
+          "name": "away_ppda",
+          "type": "numeric(8,4)",
+          "nullable": true
+        },
+        {
+          "name": "home_deep",
+          "type": "smallint",
+          "nullable": true
+        },
+        {
+          "name": "away_deep",
+          "type": "smallint",
+          "nullable": true
+        },
+        {
+          "name": "home_xpts",
+          "type": "numeric(6,4)",
+          "nullable": true
+        },
+        {
+          "name": "away_xpts",
+          "type": "numeric(6,4)",
+          "nullable": true
+        },
+        {
+          "name": "loaded_at",
+          "type": "timestamptz",
+          "nullable": false
+        }
+      ]
+    },
+    "fact_player_events": {
+      "columns": [
+        {
+          "name": "player_event_key",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "understat_match_id",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "understat_player_id",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "match_key",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "player_key",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "team_key",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "match_date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "position",
+          "type": "varchar(10)",
+          "nullable": true
+        },
+        {
+          "name": "minutes_played",
+          "type": "smallint",
+          "nullable": true
+        },
+        {
+          "name": "goals",
+          "type": "smallint",
+          "nullable": true
+        },
+        {
+          "name": "own_goals",
+          "type": "smallint",
+          "nullable": true
+        },
+        {
+          "name": "assists",
+          "type": "smallint",
+          "nullable": true
+        },
+        {
+          "name": "shots",
+          "type": "smallint",
+          "nullable": true
+        },
+        {
+          "name": "key_passes",
+          "type": "smallint",
+          "nullable": true
+        },
+        {
+          "name": "xg",
+          "type": "numeric(8,4)",
+          "nullable": true
+        },
+        {
+          "name": "xa",
+          "type": "numeric(8,4)",
+          "nullable": true
+        },
+        {
+          "name": "xg_chain",
+          "type": "numeric(8,4)",
+          "nullable": true
+        },
+        {
+          "name": "xg_buildup",
+          "type": "numeric(8,4)",
+          "nullable": true
+        },
+        {
+          "name": "yellow_cards",
+          "type": "smallint",
+          "nullable": true
+        },
+        {
+          "name": "red_cards",
+          "type": "smallint",
+          "nullable": true
+        },
+        {
+          "name": "loaded_at",
+          "type": "timestamptz",
+          "nullable": false
+        }
+      ]
+    },
+    "fact_shots": {
+      "columns": [
+        {
+          "name": "shot_key",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "understat_shot_id",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "understat_match_id",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "match_key",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "player_key",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "team_key",
+          "type": "bigint",
+          "nullable": false
+        },
+        {
+          "name": "assist_player_key",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "minute",
+          "type": "smallint",
+          "nullable": true
+        },
+        {
+          "name": "is_home",
+          "type": "boolean",
+          "nullable": true
+        },
+        {
+          "name": "x",
+          "type": "numeric(6,4)",
+          "nullable": true
+        },
+        {
+          "name": "y",
+          "type": "numeric(6,4)",
+          "nullable": true
+        },
+        {
+          "name": "xg",
+          "type": "numeric(7,4)",
+          "nullable": true
+        },
+        {
+          "name": "result",
+          "type": "varchar(20)",
+          "nullable": true
+        },
+        {
+          "name": "situation",
+          "type": "varchar(20)",
+          "nullable": true
+        },
+        {
+          "name": "shot_type",
+          "type": "varchar(20)",
+          "nullable": true
+        },
+        {
+          "name": "loaded_at",
+          "type": "timestamptz",
+          "nullable": false
+        }
+      ]
+    }
+  }
+}

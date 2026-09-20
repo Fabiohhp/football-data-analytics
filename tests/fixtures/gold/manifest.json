@@ -1,0 +1,47 @@
+{
+  "exported_at": "2026-09-20T12:00:00+00:00",
+  "source": "synthetic fixture (tests/fixtures/make_gold_fixture.py)",
+  "duckdb_version": "1.5.5",
+  "contract": "contracts/gold_columns.json",
+  "match_date_range": {
+    "min": "2024-08-17",
+    "max": "2025-08-31"
+  },
+  "tables": {
+    "dim_players": {
+      "file": "dim_players.parquet",
+      "rows": 7,
+      "bytes": 1716
+    },
+    "dim_referees": {
+      "file": "dim_referees.parquet",
+      "rows": 4,
+      "bytes": 937
+    },
+    "dim_stadiums": {
+      "file": "dim_stadiums.parquet",
+      "rows": 7,
+      "bytes": 1422
+    },
+    "dim_teams": {
+      "file": "dim_teams.parquet",
+      "rows": 7,
+      "bytes": 1498
+    },
+    "fact_matches": {
+      "file": "fact_matches.parquet",
+      "rows": 18,
+      "bytes": 6243
+    },
+    "fact_player_events": {
+      "file": "fact_player_events.parquet",
+      "rows": 30,
+      "bytes": 4792
+    },
+    "fact_shots": {
+      "file": "fact_shots.parquet",
+      "rows": 69,
+      "bytes": 4186
+    }
+  }
+}

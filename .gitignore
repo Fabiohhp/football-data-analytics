@@ -1,0 +1,24 @@
+# Secrets. Only .env.example is tracked.
+.env
+
+# Generated data. The Gold snapshot and the DuckDB store are rebuilt by
+# scripts/export_gold.py + dbt, and §13 of CLAUDE.md has not yet decided whether
+# any of it may be published.
+data/
+
+# Dashboard JSON, written by scripts/export_site_data.py from the marts.
+site/data/
+
+# dbt working directories.
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+*.egg-info/

@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Nothing in CI can reach Part 1's warehouse, so every job runs against the
+# synthetic fixture in tests/fixtures/gold via GOLD_SNAPSHOT_DIR. That is also
+# the point: it proves a fresh clone works with no real data and no database.
+env:
+  GOLD_SNAPSHOT_DIR: tests/fixtures/gold
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Format check (black)
+        run: uv run black --check .
+
+      - name: Run tests
+        run: uv run pytest -q
+
+      # The fixture is committed, so it can go stale against the contract while
+      # the tests it feeds keep passing. Rebuilding it and diffing proves the
+      # committed Parquet is what the generator actually produces.
+      - name: Fixture is up to date with the contract
+        run: |
+          uv run python tests/fixtures/make_gold_fixture.py
+          if ! git diff --quiet -- tests/fixtures/gold; then
+            echo "::error::The committed fixture differs from the generator's output."
+            echo "Re-run: uv run python tests/fixtures/make_gold_fixture.py"
+            git --no-pager diff --stat -- tests/fixtures/gold
+            exit 1
+          fi
+
+  notebooks:
+    # Committed outputs are what a reviewer reads on GitHub, and a notebook that
+    # no longer runs is worse than no notebook. This re-executes every one
+    # against the fixture; it does not compare outputs, because the fixture's
+    # numbers are not the real snapshot's.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Execute every notebook
+        run: |
+          uv run python - <<'PY'
+          import sys
+          from pathlib import Path
+
+          import nbformat
+          from nbclient import NotebookClient
+
+          failed = []
+          for path in sorted(Path("notebooks").glob("*.ipynb")):
+              print(f"--- executing {path}", flush=True)
+              nb = nbformat.read(path, as_version=4)
+              try:
+                  NotebookClient(
+                      nb,
+                      timeout=900,
+                      kernel_name="python3",
+                      resources={"metadata": {"path": str(path.parent)}},
+                  ).execute()
+              except Exception as exc:  # noqa: BLE001 - report all, fail once
+                  print(f"::error file={path}::{type(exc).__name__}: {exc}")
+                  failed.append(path)
+
+          if failed:
+              print(f"{len(failed)} notebook(s) failed to execute")
+              sys.exit(1)
+          print("all notebooks executed")
+          PY
+
+  # Added in roadmap phase 2, once dbt/models exists:
+  #   - name: dbt build (on the fixture)
+  #     run: uv run dbt build --project-dir dbt --profiles-dir dbt
+  #
+  # Added in roadmap phase 4, once site/ exists:
+  #   - name: Smoke-test the dashboard
+  #     run: uv run pytest tests/test_site.py   # pytest-playwright, no Node

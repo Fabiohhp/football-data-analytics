@@ -34,9 +34,25 @@ MANIFEST_NAME = "manifest.json"
 
 
 def snapshot_dir() -> Path:
-    """Where the snapshot lives: ``GOLD_SNAPSHOT_DIR`` if set, else ``data/gold``."""
+    """Where the snapshot lives: ``GOLD_SNAPSHOT_DIR`` if set, else ``data/gold``.
+
+    **A relative ``GOLD_SNAPSHOT_DIR`` is relative to the repository root, not to
+    the current directory.** The setting is repo-scoped, and the processes that
+    read it do not share a working directory: pytest runs from the root, while a
+    notebook kernel — under Jupyter and under nbclient in CI alike — runs from
+    ``notebooks/``. Resolving against the caller's cwd would make the same
+    ``GOLD_SNAPSHOT_DIR=tests/fixtures/gold`` mean two different places and fail
+    only in the notebook, with an error that points at the snapshot rather than
+    at the path.
+    """
     override = os.environ.get("GOLD_SNAPSHOT_DIR")
-    return Path(override).expanduser().resolve() if override else DEFAULT_SNAPSHOT_DIR
+    if not override:
+        return DEFAULT_SNAPSHOT_DIR
+
+    path = Path(override).expanduser()
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    return path.resolve()
 
 
 class SnapshotMissingError(RuntimeError):

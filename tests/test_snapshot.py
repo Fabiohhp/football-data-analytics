@@ -18,6 +18,31 @@ class TestSnapshotDir:
         monkeypatch.delenv("GOLD_SNAPSHOT_DIR", raising=False)
         assert snapshot.snapshot_dir() == snapshot.DEFAULT_SNAPSHOT_DIR
 
+    def test_relative_override_is_repo_relative_not_cwd_relative(self, monkeypatch, tmp_path):
+        """Regression: CI set a relative path and the notebook job failed.
+
+        pytest runs from the repository root but a notebook kernel runs from
+        ``notebooks/``, so a cwd-relative reading made the same setting point at
+        ``notebooks/tests/fixtures/gold`` and raised SnapshotMissingError there
+        while passing everywhere else.
+        """
+        monkeypatch.setenv("GOLD_SNAPSHOT_DIR", "tests/fixtures/gold")
+        expected = (snapshot.REPO_ROOT / "tests" / "fixtures" / "gold").resolve()
+
+        monkeypatch.chdir(snapshot.REPO_ROOT)
+        assert snapshot.snapshot_dir() == expected
+
+        # The same setting, read from anywhere else, must mean the same place.
+        monkeypatch.chdir(snapshot.REPO_ROOT / "notebooks")
+        assert snapshot.snapshot_dir() == expected
+        monkeypatch.chdir(tmp_path)
+        assert snapshot.snapshot_dir() == expected
+
+    def test_absolute_override_is_left_alone(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("GOLD_SNAPSHOT_DIR", str(tmp_path))
+        monkeypatch.chdir(snapshot.REPO_ROOT / "notebooks")
+        assert snapshot.snapshot_dir() == tmp_path.resolve()
+
 
 class TestMissingSnapshot:
     def test_raises_with_the_command_that_fixes_it(self, tmp_path):

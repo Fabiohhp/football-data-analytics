@@ -109,13 +109,43 @@ class TestTrapsArePresent:
         # calendar-year derivation gets wrong.
         assert str(seasons.loc[seasons.season == "2025/26", "lo"].iloc[0]).startswith("2025-08")
 
-    def test_trap_6_unfinished_matches_have_null_scores(self, snap):
-        row = snap.df(
-            "SELECT status, home_goals, away_goals FROM fact_matches WHERE status <> 'FINISHED'"
-        )
-        assert len(row) >= 1, "no unfinished match to filter out"
-        assert row["home_goals"].isna().all()
-        assert row["away_goals"].isna().all()
+    def test_trap_6_status_is_not_a_clean_filter(self, snap):
+        """The three kinds of non-FINISHED match, which are not the same thing.
+
+        Measured in ``notebooks/01_data_profile.ipynb`` §9 and corrected in
+        CLAUDE.md §5: ``status = 'FINISHED'`` alone is wrong in *both* directions,
+        so the fixture has to carry an example of each case.
+        """
+        rows = snap.df("""
+            SELECT status, home_goals, away_goals, result, home_xg
+            FROM fact_matches
+            WHERE status <> 'FINISHED'
+            ORDER BY status
+            """)
+        by_status = {row["status"]: row for _, row in rows.iterrows()}
+        assert set(by_status) == {"AWARDED", "POSTPONED", "SCHEDULED"}
+
+        # AWARDED: abandoned and then awarded by the federation. Really played, so
+        # it has a score and xG, and it counted towards the real league table.
+        # `status = 'FINISHED'` wrongly drops it.
+        awarded = by_status["AWARDED"]
+        assert pd.notna(awarded["home_goals"])
+        assert pd.notna(awarded["result"])
+        assert pd.notna(awarded["home_xg"])
+
+        # POSTPONED: never played, and carries a phantom 0-0 DRAW with no xG. A
+        # scoreline that looks entirely plausible and is entirely fictional.
+        postponed = by_status["POSTPONED"]
+        assert (postponed["home_goals"], postponed["away_goals"]) == (0, 0)
+        assert postponed["result"] == "DRAW"
+        assert pd.isna(postponed["home_xg"])
+
+        # SCHEDULED: not played, and the scores really are NULL. Absent from the
+        # real snapshot, permitted by Gold, and scored as a 0-0 draw by anything
+        # that lets it through.
+        scheduled = by_status["SCHEDULED"]
+        assert pd.isna(scheduled["home_goals"])
+        assert pd.isna(scheduled["result"])
 
     def test_trap_7_a_finished_match_has_null_xg(self, snap):
         unpaired = snap.sql(
@@ -152,34 +182,82 @@ class TestTrapsArePresent:
         assert "MissedShots" in results
 
     def test_trap_13_one_fixture_exists_as_two_rows(self, snap):
-        halves = snap.df(
-            "SELECT football_data_match_id, understat_match_id, competition_code, result, home_xg "
-            "FROM fact_matches WHERE home_team_key = 1 AND away_team_key = 4 "
-            "AND match_date BETWEEN DATE '2025-08-30' AND DATE '2025-08-31' "
-            "ORDER BY match_date"
-        )
+        """Both halves are FINISHED and both carry the same scoreline.
+
+        This is the part of trap 13 that CLAUDE.md originally had wrong, and the
+        reason it matters: if only one half looked like a played match, the status
+        filter would separate them and the Football-Data id would be optional.
+        Measured against the real snapshot — all eleven comparable pairs agree on
+        the score — it is the id and nothing else.
+        """
+        halves = snap.df("""
+            SELECT football_data_match_id, understat_match_id, competition_code,
+                   competition_name, matchday, status, home_goals, away_goals,
+                   result, home_goals_ht, home_xg, referee_key
+            FROM fact_matches
+            WHERE home_team_key = 2 AND away_team_key = 3
+              AND match_date BETWEEN DATE '2024-11-09' AND DATE '2024-11-10'
+            ORDER BY match_date
+            """)
 
         assert len(halves) == 2, "the split fixture is missing"
-        result_half, xg_half = halves.iloc[0], halves.iloc[1]
-        # One half carries the result and no xG ...
-        assert pd.notna(result_half["football_data_match_id"])
-        assert pd.notna(result_half["result"])
-        assert pd.isna(result_half["home_xg"])
-        # ... the other carries the xG, with no result and no competition_code.
-        assert pd.isna(xg_half["competition_code"])
-        assert pd.isna(xg_half["result"])
-        assert pd.notna(xg_half["home_xg"])
+        fd_half, us_half = halves.iloc[0], halves.iloc[1]
 
-    def test_trap_13_counting_matches_needs_the_football_data_filter(self, snap):
-        # Without the filter, the split fixture double-counts Arsenal's matches.
-        unfiltered, filtered = snap.sql("""
+        # Both look like matches that were played, and agree on the score.
+        assert (fd_half["status"], us_half["status"]) == ("FINISHED", "FINISHED")
+        assert fd_half["home_goals"] == us_half["home_goals"]
+        assert fd_half["away_goals"] == us_half["away_goals"]
+        assert fd_half["result"] == us_half["result"]
+
+        # The Football-Data half: the id, the half-time score, no xG.
+        assert pd.notna(fd_half["football_data_match_id"])
+        assert pd.isna(fd_half["understat_match_id"])
+        assert pd.notna(fd_half["home_goals_ht"])
+        assert pd.isna(fd_half["home_xg"])
+
+        # The Understat half: the xG, and none of Football-Data's columns — no id,
+        # no competition code, no matchday, no half-time score, no official. The
+        # competition *name* survives, as it does in the real snapshot.
+        assert pd.isna(us_half["football_data_match_id"])
+        assert pd.notna(us_half["understat_match_id"])
+        assert pd.notna(us_half["home_xg"])
+        assert pd.isna(us_half["competition_code"])
+        assert pd.notna(us_half["competition_name"])
+        assert pd.isna(us_half["matchday"])
+        assert pd.isna(us_half["home_goals_ht"])
+        assert us_half["referee_key"] == 0
+
+    def test_trap_13_the_status_filter_does_not_separate_the_halves(self, snap):
+        """Which is why `int_team_matches` needs the Football-Data id as well.
+
+        Both halves survive `status IN ('FINISHED', 'AWARDED')`, so a model that
+        stopped there would count the fixture twice.
+        """
+        both, filtered = snap.sql("""
             SELECT
-              count(*) FILTER (WHERE true),
-              count(*) FILTER (WHERE football_data_match_id IS NOT NULL)
+              count(*) FILTER (WHERE status IN ('FINISHED', 'AWARDED')),
+              count(*) FILTER (WHERE status IN ('FINISHED', 'AWARDED')
+                                 AND football_data_match_id IS NOT NULL)
             FROM fact_matches
-            WHERE home_team_key = 1 OR away_team_key = 1
+            WHERE home_team_key = 2 AND away_team_key = 3
             """).fetchone()
-        assert unfiltered == filtered + 1
+        assert both == filtered + 1
+
+    def test_trap_13_and_7_are_the_same_rows(self, snap):
+        """Every counting match without xG is the Football-Data half of a split.
+
+        True of the real snapshot — all twelve null-xG counting matches are split
+        halves — so the fixture models the two traps with one fixture rather than
+        inventing a standalone unpaired match that does not occur.
+        """
+        rows = snap.df("""
+            SELECT count(*) AS n
+            FROM fact_matches
+            WHERE status IN ('FINISHED', 'AWARDED')
+              AND football_data_match_id IS NOT NULL
+              AND home_xg IS NULL
+            """)
+        assert rows["n"].iloc[0] >= 1, "no NULL-xG counting match"
 
     def test_trap_14_duplicate_shots_exist_under_different_ids(self, snap):
         dupes = snap.df("""

@@ -1,0 +1,12 @@
+# DuckDB path only — there are no secrets here. Part 1's PostgreSQL credentials
+# live in .env and are read by scripts/export_gold.py, which is the only thing in
+# this repository that ever connects to the warehouse.
+football_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      # Relative to the directory dbt is invoked from: the repository root, per
+      # CLAUDE.md §11. data/ is gitignored.
+      path: "{{ env_var('ANALYTICS_DUCKDB', 'data/analytics.duckdb') }}"
+      threads: 4

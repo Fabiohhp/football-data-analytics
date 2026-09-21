@@ -1,0 +1,92 @@
+version: 2
+
+models:
+  - name: int_team_matches
+    description: |
+      **Grain: one row per team per counting match** (`team_key` × `match_key`) —
+      two rows per fixture, one from each side's point of view.
+
+      This is the foundation of every team metric (CLAUDE.md §6). A league table is
+      a `GROUP BY team_key, season, competition_code` over it; form is a window
+      function over it; home advantage is a `GROUP BY is_home`. Nothing downstream
+      re-applies the two filters that define "counting" — `status IN ('FINISHED',
+      'AWARDED')` and `football_data_match_id IS NOT NULL` — and no mart may widen
+      them, which is what the tests below are for.
+
+      It is tested two ways on purpose, because the two catch different mistakes.
+      `assert_int_team_matches_two_rows_per_counting_match` catches a lost or
+      duplicated row. `assert_completed_seasons_have_full_fixture_lists` catches a
+      *wrong filter* — the row count is internally consistent either way, but only
+      the second notices that six clubs are suddenly one match short of a full
+      season.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [team_key, match_key]
+    columns:
+      - name: match_key
+        description: The fixture. Appears exactly twice, once per side.
+        tests: [not_null]
+      - name: team_key
+        description: The club this row is about.
+        tests: [not_null]
+      - name: opponent_key
+        description: The other club. `count(distinct opponent_key)` per club-season is half a complete fixture list.
+        tests: [not_null]
+      - name: is_home
+        description: Whether this club was at home. The basis of the home-advantage analysis (§8 question 3).
+        tests: [not_null]
+      - name: season
+        description: "`'YYYY/YY'`, carried from `fact_matches`."
+        tests: [not_null]
+      - name: competition_code
+        description: |
+          One of `PL`, `PD`, `BL1`, `SA`, `FL1`. Never null here: the rows with no
+          competition code are the Understat halves of duplicated fixtures, and the
+          `football_data_match_id` filter has already removed them. That is also why
+          `not_null` belongs on this column and not on `stg_matches`.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["PL", "PD", "BL1", "SA", "FL1"]
+      - name: goals_for
+        description: |
+          Goals this club scored. `not_null` is deliberate: Gold permits a null score
+          for an unplayed fixture, none exist in the current snapshot, and a future
+          one arriving here should fail the build rather than be scored as a 0-0
+          defeat (CLAUDE.md §12 — where a trap's count is currently zero, the models
+          test that it stays zero).
+        tests: [not_null]
+      - name: goals_against
+        tests: [not_null]
+      - name: points
+        description: 3 / 1 / 0, derived from the scoreline in this row so that AWARDED matches are scored correctly.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1, 3]
+                quote: false
+      - name: xg_for
+        description: |
+          Understat expected goals for this club in this match. **Nullable, and never
+          coalesced** (§5 trap 7): null means the sources did not pair the match, and
+          the marts report how many matches their xG covers.
+      - name: xg_against
+        description: Expected goals conceded. Null exactly when `xg_for` is null — the two arrive as a pair.
+      - name: xg_difference
+        description: "`xg_for - xg_against`. Null when the match has no xG."
+      - name: npxg_for
+        description: Non-penalty expected goals for this club, as Understat reports it at match level.
+      - name: ppda
+        description: |
+          Passes allowed per defensive action **by this club** — its own pressing
+          intensity. **Lower means more pressing** (§5 trap 12). Null slightly more
+          often than xG, so the marts count its coverage separately.
+      - name: opponent_ppda
+        description: The opponent's PPDA in the same match, i.e. how hard this club was pressed.
+      - name: xpts
+        description: Understat's expected points for this club in this match (§5 trap 12).
+      - name: deep_for
+        description: Understat "deep" passes completed by this club — passes into the area around the box.

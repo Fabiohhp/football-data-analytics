@@ -1,0 +1,190 @@
+version: 2
+
+models:
+  # --- facts ----------------------------------------------------------------
+
+  - name: stg_matches
+    description: |
+      **Grain: one row per match** (`match_key`), 1:1 with `gold.fact_matches`.
+
+      Everything Gold holds, unfiltered. That includes rows no league table should
+      ever count — the postponed fixture carrying a phantom 0-0, and both halves of
+      the twelve fixtures the sources dated differently — because the filters belong
+      in `int_team_matches` and the tests there need something to compare against.
+    columns:
+      - name: match_key
+        description: Surrogate key. One per row in Gold, including both halves of a duplicated fixture.
+        tests: [unique, not_null]
+
+      - name: football_data_match_id
+        description: |
+          Football-Data's id, and the marker of the result-bearing half of a
+          duplicated fixture (§5 trap 13). Null on the twelve Understat-only rows,
+          which are `FINISHED` and carry a scoreline too — so this, not `status`, is
+          what separates them. `int_team_matches` requires it to be present.
+
+      - name: season
+        description: "`'YYYY/YY'`, Part 1's August-cutoff label. The only fact that carries its own season (§5 trap 5)."
+        tests: [not_null]
+
+      - name: status
+        description: |
+          Football-Data's status. `FINISHED` and `AWARDED` are matches that were
+          really played; `POSTPONED` was not, and carries a phantom 0-0 with
+          `result = 'DRAW'` and no xG (§5 trap 6).
+        tests:
+          # Measured against the snapshot rather than assumed (§5 trap 11). A failure
+          # means Part 1 loaded a status this repository has not made a decision
+          # about: decide whether it counts, then add it here and to
+          # int_team_matches. It is not a formatting nit — an unreviewed status is
+          # either a missing match or a phantom one.
+          - accepted_values:
+              arguments:
+                values: ["FINISHED", "AWARDED", "POSTPONED", "SCHEDULED"]
+
+      - name: result
+        description: Football-Data's outcome from the home side's point of view. Null where no result was reported.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["HOME_TEAM", "AWAY_TEAM", "DRAW"]
+
+      - name: match_date
+        description: Local calendar date of the kickoff. The source of every derived season.
+        tests: [not_null]
+
+      - name: home_xg
+        description: |
+          Understat's expected goals for the home side. **Null is not zero** — it
+          means the two sources never paired the match (§5 trap 7). `home_xg` and
+          `away_xg` are always null as a pair, which is what
+          `assert_xg_nulls_are_not_zeroed` relies on.
+
+      - name: home_ppda
+        description: |
+          Passes allowed per defensive action by the home side. **Lower means more
+          pressing** (§5 trap 12). Null slightly more often than xG is — one match in
+          the current snapshot has xG but no PPDA — so PPDA coverage is counted
+          separately from xG coverage in the marts.
+
+      - name: home_xpts
+        description: Understat's expected points for the home side in this match (§5 trap 12).
+
+      - name: referee_key
+        description: "`0` is the `Unknown` member and means no official was reported (§5 trap 3)."
+        tests: [not_null]
+
+  - name: stg_player_events
+    description: |
+      **Grain: one row per player per match** (`player_event_key`), 1:1 with
+      `gold.fact_player_events`. Understat's player lines, plus `season` derived
+      from the row's own `match_date`.
+    columns:
+      - name: player_event_key
+        tests: [unique, not_null]
+      - name: understat_player_id
+        description: The durable player key. Aggregate players by this, never by `player_key` (§5 trap 1).
+        tests: [not_null]
+      - name: player_key
+        description: The `dim_players` **version** key. A transferred player has several (§5 trap 1).
+        tests: [not_null]
+      - name: team_key
+        description: The club the player turned out for **in this match** — the only correct answer to that question (§5 trap 2).
+        tests: [not_null]
+      - name: match_key
+        description: |
+          Nullable (§5 trap 4): Understat supplied the row before the cross-source
+          join produced a fixture for it. Currently zero such rows in the real
+          snapshot, and deliberately non-zero in the CI fixture. Anything that needs
+          match attributes LEFT joins and counts what did not match.
+      - name: match_date
+        description: The date the season below is derived from, so it must be present.
+        tests: [not_null]
+      - name: season
+        description: |
+          Derived from `match_date` by the `season_label` macro. `not_null` is the
+          test that keeps this a derivation rather than a join — the fixture's orphan
+          event (null `match_key`) would lose its season the moment someone joined
+          `stg_matches` for it.
+        tests: [not_null]
+      - name: xg
+        description: |
+          Expected goals, **including penalties**. There is no non-penalty xG per
+          player in Gold (§5 trap 8); build npxG from `stg_shots` where
+          `situation <> 'Penalty'`.
+
+  - name: stg_shots
+    description: |
+      **Grain: one row per shot** (`shot_key`), 1:1 with `gold.fact_shots` — which
+      means 46 rows across two La Liga matches are genuine duplicates (§5 trap 14)
+      and are still here. `mart_shots` is where they get deduplicated.
+    columns:
+      - name: shot_key
+        tests: [unique, not_null]
+      - name: match_key
+        description: Nullable, as in `stg_player_events` (§5 trap 4).
+      - name: team_key
+        tests: [not_null]
+      - name: x
+        description: Understat's normalized distance along the pitch, [0, 1]. Higher is closer to the goal being attacked; the penalty spot is 0.885 (§5 trap 10).
+      - name: y
+        description: Understat's normalized position across the pitch, [0, 1]. 0.5 is the middle.
+      - name: result
+        description: What became of the shot.
+        tests:
+          # Measured, not assumed (§5 trap 11). Two spellings bite here:
+          # `MissedShots` is plural where everything else is singular, and `OwnGoal`
+          # is a *result* — so `result = 'Goal'` correctly excludes own goals, but any
+          # "on target" proxy built by excluding misses does not.
+          - accepted_values:
+              arguments:
+                values: ["Goal", "OwnGoal", "MissedShots", "BlockedShot", "SavedShot", "ShotOnPost"]
+      - name: situation
+        description: How the chance arose.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["OpenPlay", "FromCorner", "SetPiece", "DirectFreekick", "Penalty"]
+      - name: shot_type
+        description: Body part.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["RightFoot", "LeftFoot", "Head", "OtherBodyPart"]
+
+  # --- dimensions -----------------------------------------------------------
+
+  - name: stg_teams
+    description: "**Grain: one row per club** (`team_key`), SCD Type 1 — no history, so no version trap here."
+    columns:
+      - name: team_key
+        tests: [unique, not_null]
+      - name: team_name
+        description: "`canonical_name` in Gold: the conformed cross-source name, and the only one to display."
+        tests: [not_null]
+
+  - name: stg_players
+    description: |
+      **Grain: one row per player version** (`player_key`), SCD Type 2. Not one row
+      per player — `understat_player_id` repeats (§5 trap 1).
+    columns:
+      - name: player_key
+        tests: [unique, not_null]
+      - name: understat_player_id
+        description: The durable key. Deliberately **not** unique in this model.
+        tests: [not_null]
+      - name: valid_from
+        description: First seen inside the loaded range. **Never read as a transfer date** (CLAUDE.md §2).
+        tests: [not_null]
+
+  - name: stg_referees
+    description: "**Grain: one row per official** (`referee_key`), SCD Type 1. Key 0 is `Unknown` = not reported."
+    columns:
+      - name: referee_key
+        tests: [unique, not_null]
+
+  - name: stg_stadiums
+    description: "**Grain: one row per ground** (`stadium_key`), SCD Type 1. `city` and `capacity` are always null (§5 trap 9)."
+    columns:
+      - name: stadium_key
+        tests: [unique, not_null]

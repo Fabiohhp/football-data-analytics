@@ -1,0 +1,39 @@
+name: football_analytics
+version: "0.1.0"
+config-version: 2
+profile: football_analytics
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+flags:
+  # Generic tests take their arguments under `arguments:`. dbt 1.12 warns about the
+  # old top-level form and will require this one; opting in keeps `dbt build` output
+  # clean, which matters because CI reads it.
+  require_generic_test_arguments_property: true
+
+# Where the snapshot is read from is not a var: it is the GOLD_SNAPSHOT_DIR
+# environment variable, read in models/staging/sources.yml, because a var's default
+# here is not Jinja-rendered. See the comment there.
+vars:
+  # Per-90 player metrics need a minutes floor (CLAUDE.md §6). Ten full matches.
+  # Every chart built on a per-90 states it.
+  min_minutes: 900
+
+  # How many matches a rolling form window covers, in mart_team_form. The mart
+  # carries this number on every row so a chart cannot show a window without
+  # saying how long it is.
+  form_window: 5
+
+models:
+  football_analytics:
+    # Tables, not views, everywhere. A view over the snapshot would store
+    # `read_parquet('data/gold/...')` inside analytics.duckdb and resolve that
+    # path against whoever opened the database later — so the same model would
+    # work from the repository root and fail from notebooks/. Materializing means
+    # the Parquet path is used at build time only, and analytics.duckdb is a
+    # self-contained artifact. The snapshot is small enough that this is free.
+    +materialized: table

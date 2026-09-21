@@ -76,16 +76,23 @@ class TestOpenSnapshot:
             assert actual == expected, f"{table}: manifest says {expected}, Parquet has {actual}"
 
     def test_provenance_is_exposed(self, snap):
-        assert snap.first_match_date.isoformat() == "2024-08-17"
-        assert snap.last_match_date.isoformat() == "2025-08-31"
-        assert snap.exported_at.startswith("2026-09-20")
+        # Checked against the data rather than against hardcoded dates: the point is
+        # that the manifest describes the Parquet beside it, and a fixture whose
+        # calendar shifts should not need this test edited to keep proving that.
+        first, last = snap.sql(
+            "SELECT min(match_date), max(match_date) FROM fact_matches"
+        ).fetchone()
+
+        assert snap.first_match_date == first
+        assert snap.last_match_date == last
+        assert snap.exported_at.startswith("2026-")
 
     def test_citation_names_the_window_and_the_volume(self, snap):
         # CLAUDE.md §7: every result states the snapshot's match_date range.
         citation = snap.citation()
 
-        assert "2024-08-17" in citation
-        assert "2025-08-31" in citation
+        assert snap.first_match_date.isoformat() in citation
+        assert snap.last_match_date.isoformat() in citation
         assert "matches" in citation and "shots" in citation
 
     def test_is_read_only(self, snap):

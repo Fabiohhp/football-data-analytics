@@ -18,18 +18,39 @@ The data is invented, but the *shape* is not. Every trap in CLAUDE.md §5 is
 deliberately present, so a model or notebook that falls into one fails here
 rather than in production:
 
-* an ``Unknown`` member at key 0 in every dimension (trap 3);
+* an ``Unknown`` member at key 0 in every dimension (trap 3), and a match that
+  reports no referee;
 * one player with two SCD Type 2 versions after a January transfer, so grouping
   by ``player_key`` instead of ``understat_player_id`` splits their season
   (traps 1 and 2);
 * rows with a NULL ``match_key`` in both event facts (trap 4);
-* a match with NULL xG that must never be coalesced to zero (trap 7);
-* a ``SCHEDULED`` match whose scores are NULL (trap 6);
-* one fixture split across two rows, one holding the result and one the xG with
-  no ``competition_code`` (trap 13);
+* an ``AWARDED`` match — really played, real score, real xG — inside a *completed*
+  season, so a model that filters on ``status = 'FINISHED'`` alone leaves two
+  clubs a match short and fails the fixture-list assertion (trap 6);
+* a ``POSTPONED`` match carrying a phantom 0-0 with ``result = 'DRAW'`` and no xG,
+  which both of ``int_team_matches``' filters must exclude (trap 6);
+* a ``SCHEDULED`` match whose scores are NULL — absent from the real snapshot,
+  because Part 1 loads only up to the current date, but permitted by Gold and
+  scored as a 0-0 draw by anything that lets it through (trap 6);
+* one fixture split across two rows (trap 13), also inside the completed season.
+  **Both halves are ``FINISHED`` and both carry the same scoreline** — measured
+  against the real snapshot, where all eleven comparable pairs agree — so only the
+  missing ``football_data_match_id`` separates them. The half with no xG is the
+  Football-Data one, which is also how trap 7 appears in reality: every counting
+  match without xG is the Football-Data half of a split fixture;
 * a pair of duplicated shots under different shot ids (trap 14);
-* penalties sitting on the penalty spot at x=0.885, y=0.5 (trap 10);
+* penalties sitting on exactly x=0.885, y=0.5 at 0.76 xG (trap 10), placed by a
+  counter rather than a probability so they cannot fall out of the fixture when an
+  unrelated change shifts the random stream;
+* every value of ``result``, ``situation`` and ``shot_type`` the real snapshot
+  holds (trap 11), including the plural ``MissedShots`` and an ``OwnGoal`` — which
+  is a *shot result*, sitting on the team of the player who scored it;
 * two seasons either side of the August cutoff (trap 5).
+
+Where the real snapshot and this file disagree about a trap's *shape*, the real
+snapshot wins: several of the notes above are corrections made after measuring it,
+not guesses. A fixture that carried a trap in a form the data does not take would
+let a broken model pass CI.
 """
 
 from __future__ import annotations
@@ -193,20 +214,46 @@ def build_matches(rng: random.Random) -> tuple[list[dict[str, Any]], list[dict[s
         home: int,
         away: int,
         status: str = "FINISHED",
-        with_result: bool = True,
+        football_data: bool = True,
+        scoreline: str | tuple[int, int] = "real",
         with_xg: bool = True,
         referee_key: int = 1,
-    ) -> None:
+        competition_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Add one `fact_matches` row, and return it.
+
+        The three knobs that are *not* the same thing, because the real snapshot
+        proves they are not (see the module docstring):
+
+        ``football_data``
+            Whether Football-Data knows this fixture, i.e. whether
+            ``football_data_match_id`` is set. The Understat half of a split
+            fixture is the only row where this is false — and it is `FINISHED`
+            and carries a scoreline all the same, which is why this is a separate
+            knob from ``status`` and from ``scoreline``.
+        ``scoreline``
+            ``"real"`` for an invented result, ``"none"`` to leave the goals NULL
+            for a fixture that has not been played, ``"phantom"`` for the 0-0
+            `DRAW` a POSTPONED match carries although it never kicked off, or an
+            explicit ``(home, away)`` pair so the two halves of a split fixture
+            agree — in the real snapshot they always do.
+        ``with_xg``
+            Whether Understat paired the match, i.e. whether there is any xG,
+            npxG, PPDA or xPTS, *and* whether player events and shots exist for
+            it at all.
+        """
         counters["match_key"] += 1
         counters["fd_id"] += 1
         counters["us_id"] += 1
 
         row: dict[str, Any] = {
             "match_key": counters["match_key"],
-            "football_data_match_id": counters["fd_id"] if with_result else None,
+            "football_data_match_id": counters["fd_id"] if football_data else None,
             "understat_match_id": counters["us_id"] if with_xg else None,
             "competition_code": competition_code,
-            "competition_name": COMPETITION_NAMES.get(competition_code or ""),
+            # Populated even where the code is NULL: that is what the Understat
+            # halves of split fixtures look like in the real snapshot.
+            "competition_name": competition_name or COMPETITION_NAMES.get(competition_code or ""),
             "season": season,
             "matchday": matchday,
             "match_utc": datetime.combine(match_date, datetime.min.time()).replace(
@@ -220,15 +267,30 @@ def build_matches(rng: random.Random) -> tuple[list[dict[str, Any]], list[dict[s
             "stadium_key": HOME_STADIUM[home],
         }
 
-        if with_result and status == "FINISHED":
+        if scoreline == "real":
             hg, ag = rng.randint(0, 4), rng.randint(0, 3)
+        elif scoreline == "phantom":
+            # A POSTPONED match was never played, and still carries a 0-0 that
+            # looks entirely plausible (trap 6).
+            hg, ag = 0, 0
+        elif scoreline == "none":
+            hg = ag = None
+        else:
+            hg, ag = scoreline
+
+        if hg is not None:
             row |= {
                 "home_goals": hg,
                 "away_goals": ag,
-                "home_goals_ht": rng.randint(0, hg),
-                "away_goals_ht": rng.randint(0, ag),
                 "result": "HOME_TEAM" if hg > ag else ("AWAY_TEAM" if ag > hg else "DRAW"),
             }
+            # Half-time goals come from Football-Data, so the Understat half of a
+            # split fixture has none — and neither does a phantom scoreline.
+            if football_data and scoreline == "real":
+                row |= {
+                    "home_goals_ht": rng.randint(0, hg),
+                    "away_goals_ht": rng.randint(0, ag),
+                }
 
         if with_xg:
             hxg = round(rng.uniform(0.4, 3.2), 4)
@@ -259,21 +321,59 @@ def build_matches(rng: random.Random) -> tuple[list[dict[str, Any]], list[dict[s
             )
 
         rows.append(row)
+        return row
 
     # --- 2024/25: a full double round robin in the PL, and one in Spain ----
+    #
+    # This season is *complete*, which is what makes it the right place for the two
+    # traps that only a wrong filter exposes. `mart_team_season` asserts that every
+    # club in a completed season played twice its number of opponents, so a model
+    # that drops the AWARDED match on matchday 7, or keeps the Understat half of the
+    # split fixture on matchday 5, fails that assertion here instead of shipping a
+    # league table one match short.
     day = date(2024, 8, 17)
     for matchday, (home, away) in enumerate(double_round_robin(PL_TEAMS), start=1):
-        # One fixture the two sources never paired: xG stays NULL (trap 7).
-        add(
+        match = add(
             competition_code="PL",
             season="2024/25",
             matchday=matchday,
             match_date=day,
             home=home,
             away=away,
+            # Matchday 7 was abandoned and then awarded by the federation: really
+            # played, real score, real xG, and it counted towards the real league
+            # table. `status = 'FINISHED'` alone drops it (trap 6).
+            status="AWARDED" if matchday == 7 else "FINISHED",
+            # Matchday 5 is the Football-Data half of a fixture the sources dated
+            # differently, so its xG sits on the twin added below and is NULL here
+            # (traps 7 and 13). In the real snapshot these are the same rows: every
+            # counting match with no xG is the Football-Data half of a split fixture.
             with_xg=(matchday != 5),
             referee_key=rng.choice([1, 2]),
         )
+
+        if matchday == 5:
+            # The Understat half of that fixture, dated a day later. It carries the
+            # xG and the player events, and it is `FINISHED` **with the same
+            # scoreline** — measured: all eleven comparable pairs in the real
+            # snapshot agree on the score. So `status` does not separate the halves
+            # and only the missing `football_data_match_id` does, which is exactly
+            # the mistake `int_team_matches` has to not make. `competition_code` and
+            # `matchday` are NULL and no official is reported, as in the real rows.
+            add(
+                competition_code=None,
+                competition_name=COMPETITION_NAMES["PL"],
+                season="2024/25",
+                matchday=None,
+                match_date=day + timedelta(days=1),
+                home=home,
+                away=away,
+                football_data=False,
+                scoreline=(match["home_goals"], match["away_goals"]),
+                with_xg=True,
+                referee_key=0,
+            )
+
         day += timedelta(days=21)
 
     for matchday, (home, away) in enumerate(double_round_robin(PD_TEAMS), start=1):
@@ -297,8 +397,9 @@ def build_matches(rng: random.Random) -> tuple[list[dict[str, Any]], list[dict[s
         away=1,
         referee_key=2,
     )
-    # Not played yet, so the scores are NULL (trap 6). Also the only match left
-    # pointing at the Unknown referee (trap 3).
+    # Not played yet, so the scores are NULL. The real snapshot has no such row —
+    # Part 1 only loads up to the current date — but Gold permits one, and a model
+    # that let it through would score it as a 0-0 draw. Kept so that stays tested.
     add(
         competition_code="PL",
         season="2025/26",
@@ -307,34 +408,26 @@ def build_matches(rng: random.Random) -> tuple[list[dict[str, Any]], list[dict[s
         home=3,
         away=4,
         status="SCHEDULED",
-        with_result=False,
+        scoreline="none",
         with_xg=False,
-        referee_key=0,
+        referee_key=1,
     )
-
-    # --- the split fixture (trap 13) --------------------------------------
-    # The sources disagree on the calendar date of a late kickoff, so one real
-    # fixture lands as two rows: the Football-Data half with the result and no
-    # xG, and the Understat half with the xG, no result, no competition_code.
+    # POSTPONED: never played, and the opposite problem. It carries a phantom 0-0
+    # with `result = 'DRAW'` and no xG — a scoreline that looks entirely plausible
+    # and is entirely fictional (trap 6). It is also the one row left pointing at
+    # the Unknown referee (trap 3). Both of int_team_matches' filters must exclude
+    # it, and the status filter is the one that does.
     add(
         competition_code="PL",
         season="2025/26",
         matchday=3,
         match_date=date(2025, 8, 30),
-        home=1,
-        away=4,
+        home=4,
+        away=3,
+        status="POSTPONED",
+        scoreline="phantom",
         with_xg=False,
-    )
-    add(
-        competition_code=None,
-        season="2025/26",
-        matchday=None,
-        match_date=date(2025, 8, 31),
-        home=1,
-        away=4,
-        status="UNKNOWN",
-        with_result=False,
-        with_xg=True,
+        referee_key=0,
     )
     return rows, plan
 
@@ -352,6 +445,12 @@ def build_events_and_shots(
     events: list[dict[str, Any]] = []
     shots: list[dict[str, Any]] = []
     shot_id = 7_000_000
+    # Every eleventh shot is a penalty. Deliberately a counter rather than a
+    # probability: an 8% chance produced *no* penalty at all on some seeds, which
+    # quietly took trap 10 out of the fixture — the thing the fixture exists to
+    # guarantee. Counting makes the penalty spot present by construction, and keeps
+    # the count stable when an unrelated change shifts the random stream.
+    shot_ordinal = 0
 
     for entry in plan:
         for team, is_home in ((entry["home"], True), (entry["away"], False)):
@@ -363,16 +462,23 @@ def build_events_and_shots(
 
                 for _ in range(n_shots):
                     shot_id += 1
-                    if rng.random() < 0.08:
-                        # Penalties sit on one point of the pitch (trap 10).
+                    shot_ordinal += 1
+                    if shot_ordinal % 11 == 0:
+                        # Penalties sit on exactly one point of the pitch, at
+                        # x=0.885, y=0.5 with zero variance on both axes, averaging
+                        # 0.756 xG. That is what confirms the coordinates' meaning
+                        # and orientation (trap 10), so the fixture reproduces it
+                        # exactly rather than approximately.
                         x, y, xg = 0.885, 0.5, 0.7600
                         situation, shot_type = "Penalty", "RightFoot"
                     else:
                         x = round(rng.uniform(0.74, 0.98), 4)
                         y = round(rng.uniform(0.25, 0.75), 4)
                         xg = round(rng.uniform(0.01, 0.55), 4)
-                        situation = rng.choice(["OpenPlay", "OpenPlay", "FromCorner", "SetPiece"])
-                        shot_type = rng.choice(["RightFoot", "LeftFoot", "Head"])
+                        situation = rng.choice(
+                            ["OpenPlay", "OpenPlay", "FromCorner", "SetPiece", "DirectFreekick"]
+                        )
+                        shot_type = rng.choice(["RightFoot", "LeftFoot", "Head", "OtherBodyPart"])
                     xg_total += xg
 
                     # Exactly `goals` of this player's shots end up as goals, so
@@ -381,7 +487,14 @@ def build_events_and_shots(
                         result = "Goal"
                         scored_left -= 1
                     else:
-                        result = rng.choice(["SavedShot", "MissedShots", "BlockedShot"])
+                        # The full vocabulary Understat uses, measured against the
+                        # real snapshot (trap 11). `MissedShots` really is the only
+                        # plural one. `OwnGoal` is a value of `result` too, and is
+                        # added as an explicit row below rather than drawn at random,
+                        # because it has to stay consistent with a scoreline.
+                        result = rng.choice(
+                            ["SavedShot", "MissedShots", "BlockedShot", "ShotOnPost"]
+                        )
 
                     shots.append(
                         {
@@ -427,6 +540,42 @@ def build_events_and_shots(
                         "red_cards": 0,
                     }
                 )
+
+    # --- trap 11: OwnGoal is a value of `result`, not a separate table ------
+    # Measured against the real snapshot: an OwnGoal row sits on the team of the
+    # player who put it in their own net, and counts as a goal for the *opponent* —
+    # reconstructing each side's goals from shots comes to within 1 in 5,684 that
+    # way. So `result = 'Goal'` correctly excludes own goals, but any "on target"
+    # proxy built by excluding misses silently counts them. It carries no xG worth
+    # the name, and the scorer's `own_goals` below is what records it.
+    own_goal_entry = plan[1]
+    shot_id += 1
+    shots.append(
+        {
+            "shot_key": shot_id,
+            "understat_shot_id": shot_id,
+            "understat_match_id": own_goal_entry["understat_match_id"],
+            "match_key": own_goal_entry["match_key"],
+            "player_key": squad_for(own_goal_entry["home"], own_goal_entry["match_date"])[0][0],
+            "team_key": own_goal_entry["home"],
+            "assist_player_key": None,
+            "minute": 71,
+            "is_home": True,
+            "x": 0.1200,
+            "y": 0.5100,
+            "xg": 0.0100,
+            "result": "OwnGoal",
+            "situation": "OpenPlay",
+            "shot_type": "OtherBodyPart",
+        }
+    )
+    for event in events:
+        if (
+            event["match_key"] == own_goal_entry["match_key"]
+            and event["team_key"] == own_goal_entry["home"]
+        ):
+            event["own_goals"] = 1
+            break
 
     # --- trap 14: Understat returned one match's shots twice ---------------
     # Same shot, different shot id. Anything that sums shot volume or xG without

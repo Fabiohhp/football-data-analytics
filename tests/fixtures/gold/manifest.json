@@ -5,7 +5,7 @@
   "contract": "contracts/gold_columns.json",
   "match_date_range": {
     "min": "2024-08-17",
-    "max": "2025-08-31"
+    "max": "2025-08-30"
   },
   "tables": {
     "dim_players": {
@@ -31,17 +31,17 @@
     "fact_matches": {
       "file": "fact_matches.parquet",
       "rows": 18,
-      "bytes": 6243
+      "bytes": 6157
     },
     "fact_player_events": {
       "file": "fact_player_events.parquet",
-      "rows": 30,
-      "bytes": 4792
+      "rows": 29,
+      "bytes": 4733
     },
     "fact_shots": {
       "file": "fact_shots.parquet",
-      "rows": 69,
-      "bytes": 4186
+      "rows": 59,
+      "bytes": 4048
     }
   }
 }

@@ -29,7 +29,7 @@ It is its own repository, sitting next to the pipeline that feeds it:
 | Phase | Scope | Where | Status |
 |-------|-------|-------|--------|
 | Part 1 — Data Engineering & Architecture | Ingestion, Airflow, Bronze/Silver/Gold, data quality | `../football-data-engineering` | Complete |
-| **Part 2 — Analytics & BI** | Metrics layer, analyses, dashboard | **this repository** | **In progress — phase 1 of 5 done** |
+| **Part 2 — Analytics & BI** | Metrics layer, analyses, dashboard | **this repository** | **In progress — phase 2 of 5 done** |
 | Part 3 — Machine Learning | Match outcome / xG models | separate repository, later | Not started |
 
 **The deliverable is insight a reviewer can read and reproduce** — not a
@@ -201,7 +201,13 @@ schema" section of that repository's README. Scope is the **big-5 leagues only**
    snapshot has one, because Part 1 only loads up to the current date; test that
    rather than assume it. Measured in `notebooks/01_data_profile.ipynb` §9.
 7. **Null xG is not zero.** It means the two sources did not pair that match.
-   Never `COALESCE` it to 0 — exclude it and count what was excluded.
+   Never `COALESCE` it to 0 — exclude it and count what was excluded. Measured:
+   among counting matches, the null-xG rows are **exactly** the Football-Data
+   halves of the split fixtures in trap 13 — 12 matches, 2 + 9 + 1 across the
+   three seasons — because that fixture's xG went to its twin. `home_xg` and
+   `away_xg` are always null as a pair, which is what lets
+   `assert_xg_nulls_are_not_zeroed` check the count exactly. PPDA is null slightly
+   more often than xG (one extra match), so count its coverage separately.
 8. **There is no non-penalty xG per player.** `fact_player_events.xg` includes
    penalties. Build npxG from `fact_shots` where `situation <> 'Penalty'`.
 9. **Not in Gold at all:** possession, passes, tackles (FBref is blocked in
@@ -217,18 +223,35 @@ schema" section of that repository's README. Scope is the **big-5 leagues only**
     any list of values. Two that bite: `MissedShots` is plural where every other
     value is singular, and **`OwnGoal` is a value of `fact_shots.result`** — so
     `result = 'Goal'` correctly excludes own goals, but any "on target" proxy
-    built by excluding misses does not.
+    built by excluding misses does not. An `OwnGoal` row sits on **the team of the
+    player who scored it**, and counts as a goal for the opponent: rebuilding each
+    side's goals as its own `Goal` shots plus the opponent's `OwnGoal` shots comes
+    to 5,683 against 5,684 reported. The measured vocabularies are `result` ∈
+    {Goal, OwnGoal, MissedShots, BlockedShot, SavedShot, ShotOnPost}, `situation` ∈
+    {OpenPlay, FromCorner, SetPiece, DirectFreekick, Penalty}, `shot_type` ∈
+    {RightFoot, LeftFoot, Head, OtherBodyPart} — asserted by `accepted_values`
+    tests in `dbt/models/staging/schema.yml`, which fail if Part 1 ever loads a
+    value this repository has not decided about.
 12. **Read metrics in the right direction:** a *lower* PPDA means *more*
     pressing; `xpts` is Understat's expected points for the match.
 13. **Twelve fixtures exist as two rows** (2 in 2024/25, 9 in 2025/26, 1 in
     2026/27, out of 3,733 — and only 10 of the 12 have a twin within one day, so
-    do not assume the pair is always adjacent). The sources disagree on the date of a late
-    kickoff, so the cross-source join missed them: one row carries the result
-    with no xG, the other carries xG and the player events with no result and no
-    `competition_code`. Counting matches per team therefore needs
-    `football_data_match_id IS NOT NULL`, and a player-goals total taken through
-    that filter alone loses a goal or two a season (Retegui reads 24 rather than
-    25). Decide per analysis; it is 0.3% either way.
+    do not assume the pair is always adjacent). The sources disagree on the date
+    of a late kickoff, so the cross-source join missed them.
+
+    **Corrected, having measured it — `status` does not separate the halves.**
+    Both are `FINISHED`, and both carry the same scoreline: all eleven comparable
+    pairs agree on the score, because Understat reports the result too. What the
+    Understat half lacks is Football-Data's columns — `football_data_match_id`,
+    `competition_code`, `matchday`, the half-time score — and it reports no
+    official (`referee_key = 0`); `competition_name` survives. The
+    Football-Data half is the one with no xG (trap 7).
+
+    So counting matches, points or league position needs
+    `football_data_match_id IS NOT NULL` **on top of** the status filter; neither
+    implies the other. A player-goals total taken through that filter alone loses
+    a goal or two a season (Retegui reads 24 rather than 25), because the goals
+    live on the Understat half. Decide per analysis; it is 0.3% either way.
 14. **46 duplicate shot rows across 2 La Liga matches.** Understat returned every
     shot of those matches twice under different shot ids, so shot counts and
     summed xG double there. Deduplicate on
@@ -238,32 +261,66 @@ schema" section of that repository's README. Scope is the **big-5 leagues only**
 
 ## 6. Metrics layer (dbt) conventions
 
-- Every model states its **grain** in its `schema.yml` description and has
-  `unique` + `not_null` tests on the grain's key.
+- Every model states its **grain** in its `schema.yml` description and tests it.
+  The grains here are composite, and dbt's built-in `unique` test only covers one
+  column, so `unique_combination` is vendored as a four-line generic test in
+  `dbt/macros/` rather than pulling in dbt_utils — `dbt build` never downloads a
+  package.
 - **`int_team_matches` is the foundation of every team metric:** one row per team
-  per **counting** match — `status IN ('FINISHED', 'AWARDED')` per §5 trap 6, two
-  rows per fixture — with `team_key`, `opponent_key`, `is_home`, `goals_for`,
-  `goals_against`, `xg_for`, `xg_against`, `points`, `xpts`, `season`,
-  `competition_code`. League tables, form and home advantage are all a
-  `GROUP BY` over it. Test it two ways: exactly twice as many rows as counting
-  matches, and — in a completed season — every club's played count equal to twice
-  its number of opponents. The second test is what catches a wrong status filter;
-  the first does not.
+  per **counting** match, two rows per fixture, with `team_key`, `opponent_key`,
+  `is_home`, `goals_for`, `goals_against`, `xg_for`, `xg_against`, `points`,
+  `xpts`, `season`, `competition_code`. League tables, form and home advantage are
+  all a `GROUP BY` over it, and nothing downstream re-applies its filters.
+
+  "Counting" is **two independent filters**, and neither implies the other:
+  `status IN ('FINISHED', 'AWARDED')` per §5 trap 6, *and*
+  `football_data_match_id IS NOT NULL` per §5 trap 13 — both halves of a split
+  fixture are `FINISHED` with a scoreline, so status alone lets one through.
+
+  Test it three ways, because each catches something the others do not:
+  1. exactly twice as many rows as counting matches — catches a lost or duplicated
+     row, but *not* a wrong filter, since the count stays self-consistent either
+     way;
+  2. no club playing more than a full double round robin — catches a duplicated
+     fixture, and has to be **ungated**, because an over-count also pushes a season
+     past any "is this season finished" test and would otherwise silence check 3;
+  3. in a completed season, every club's played count equal to twice its number of
+     opponents — this is what catches a wrong status filter.
+
+  Derive "completed season" from the data (`2 × (clubs − 1)`), never from a list of
+  seasons or a hardcoded 38: Ligue 1 and the Bundesliga run 18 clubs, and the
+  in-progress season has to join the test by itself when it finishes.
+- **Report coverage next to every xG figure.** `sum()` skips nulls silently, so a
+  mart that sums xG over a season is really summing over however many matches had
+  it. Each xG, xPTS and PPDA block carries its own `matches_with_*` count, and
+  `points − xPTS` compares points over *the matches that have an xPTS*
+  (`points_in_xpts_matches`) rather than a full season of points against a partial
+  season of xPTS.
 - **Per-90 metrics need a minutes floor.** It is one dbt var (`min_minutes`,
-  default 900), and every chart that uses it says so.
+  default 900), and every chart that uses it says so. Same for the rolling-form
+  window (`form_window`, default 5), which `mart_team_form` carries on every row so
+  a chart cannot draw a window without being able to state its length.
 - Seasons, leagues and thresholds are vars or columns — never literals buried in
   a model.
 - Sources point at the Parquet snapshot through dbt-duckdb's `external_location`,
-  parameterized so CI can aim the same project at the test fixture.
+  parameterized by `GOLD_SNAPSHOT_DIR` so CI can aim the same project at the test
+  fixture. **Read the env var in `sources.yml`, not through a dbt var:** dbt renders
+  Jinja in the yml files but *not* inside a var's default in `dbt_project.yml`, so
+  a `{{ env_var(...) }}` written there reaches DuckDB as a literal string.
+- **Everything is materialized as a table.** A view over the snapshot would store
+  `read_parquet('data/gold/...')` inside `analytics.duckdb` and resolve that
+  relative path against whoever opened the database next — working from the
+  repository root and failing from `notebooks/`. Tables make the snapshot path a
+  build-time concern and `analytics.duckdb` a self-contained artifact.
 
 First marts, in this order:
 
-| Mart | Grain | Holds |
-|------|-------|-------|
-| `mart_team_season` | team × season × competition | the league table, plus xPTS, points − xPTS, xG difference, PPDA |
-| `mart_team_form` | team × match | rolling xG for / against over the last N matches |
-| `mart_player_season` | player (`understat_player_id`) × season × team | totals, per-90s, goals − xG, npxG |
-| `mart_shots` | shot | shots with player, team, match and season attached |
+| Mart | Grain | Holds | Status |
+|------|-------|-------|--------|
+| `mart_team_season` | team × season × competition | the league table, plus xPTS, points − xPTS, xG difference, PPDA | ✅ phase 2 |
+| `mart_team_form` | team × match | rolling xG for / against over the last N matches | ✅ phase 2 |
+| `mart_player_season` | player (`understat_player_id`) × season × team | totals, per-90s, goals − xG, npxG | phase 3 |
+| `mart_shots` | shot | shots with player, team, match and season attached | phase 3 |
 
 ---
 
@@ -369,13 +426,16 @@ football-data-analytics/
 │   ├── export_gold.py         # Part 1 PostgreSQL -> data/gold/*.parquet + manifest.json
 │   └── export_site_data.py    # marts -> site/data/*.json (select and format only)
 ├── dbt/
-│   ├── dbt_project.yml
+│   ├── dbt_project.yml        # min_minutes and form_window vars; everything materialized
 │   ├── profiles.yml           # DuckDB path only, no secrets
-│   ├── macros/                # season_label, ...
-│   └── models/
-│       ├── staging/
-│       ├── intermediate/
-│       └── marts/
+│   ├── macros/
+│   │   ├── season.sql         # Part 1's August cutoff, in SQL, defined once
+│   │   └── test_unique_combination.sql  # composite-grain test, vendored not dbt_utils
+│   ├── models/
+│   │   ├── staging/           # stg_* — 1:1 with Gold, + sources.yml, schema.yml
+│   │   ├── intermediate/      # int_team_matches
+│   │   └── marts/             # mart_team_season, mart_team_form
+│   └── tests/                 # the singular tests: a wrong filter fails here
 ├── notebooks/                 # NN_question.ipynb, outputs committed
 ├── site/                      # static dashboard: index.html + one HTML file per page
 │   ├── css/
@@ -391,7 +451,7 @@ football-data-analytics/
 │   │   ├── make_gold_fixture.py   # builds the fixture; deterministic, CI diffs it
 │   │   └── gold/              # tiny synthetic snapshot carrying every §5 trap
 │   └── test_*.py
-├── data/                      # gitignored: gold/ snapshot, analytics.duckdb
+├── data/                      # gitignored except .gitkeep: gold/ snapshot, analytics.duckdb
 ├── pyproject.toml             # dependencies (uv) + ruff/black config; dev tools in [dev]
 ├── uv.lock                    # committed: the exact versions a reviewer will get
 ├── .python-version            # 3.12
@@ -399,8 +459,10 @@ football-data-analytics/
 └── README.md                  # portfolio front page: questions -> findings -> how to run
 ```
 
-`dbt/` and `site/` do not exist yet; they arrive in phases 2 and 4. Empty
-directories are not tracked by git, so they are created with their contents.
+`site/` does not exist yet; it arrives in phase 4. Empty directories are not
+tracked by git, so they are created with their contents — except `data/`, which
+carries a `.gitkeep` because DuckDB will not create a missing parent directory and
+`dbt build` would otherwise fail on a fresh clone.
 
 ---
 
@@ -430,8 +492,14 @@ uv run python scripts/export_gold.py --write-contract   # only when Gold changed
 
 uv run jupyter lab
 
+# --- the metrics layer: needs only the snapshot (or the fixture) -------------
+# Writes data/analytics.duckdb. Run from the repository root: both the snapshot
+# path and the database path are relative to the working directory.
+uv run dbt build --project-dir dbt --profiles-dir dbt
+uv run dbt test --project-dir dbt --profiles-dir dbt     # tests only
+uv run dbt docs generate --project-dir dbt --profiles-dir dbt   # lineage + grains
+
 # --- not built yet -----------------------------------------------------------
-uv run dbt build --project-dir dbt --profiles-dir dbt   # (phase 2)
 uv run python scripts/export_site_data.py               # (phase 4)
 uv run python -m http.server -d site                    # (phase 4)
 ```
@@ -447,7 +515,7 @@ the next.
 |-------|-------------|-----------|
 | 0 ✅ | Backfill 2024/25 and 2025/26 — **in Part 1** | Part 1's quality checks pass on two complete seasons |
 | 1 ✅ | Repo skeleton, export script, contract check, `01_data_profile.ipynb` | We know what is really in the data: matches per league and season, null-xG rate, `Unknown`-member and null-`match_key` counts |
-| 2 | dbt staging, `int_team_matches`, the first two marts, CI | `dbt build` passes locally, and on the fixture in CI |
+| 2 ✅ | dbt staging, `int_team_matches`, the first two marts, CI | `dbt build` passes locally, and on the fixture in CI |
 | 3 | Analyses #1 and #2 from §8 | Each ends in a written answer with its caveats |
 | 4 | Static dashboard site | Runs locally from marts, passes the CI smoke test; hosting decided (§13) |
 | 5 | README as the portfolio front page | A reviewer understands the findings without running anything |
@@ -459,6 +527,35 @@ currently zero in both event facts, and no match has a null score), and **one wa
 documented wrongly** — §5 trap 6 now carries the corrected status filter, which is
 the first thing `int_team_matches` has to get right. Where a trap's count is
 currently zero, the dbt models test that it stays zero rather than assuming it.
+
+**What phase 2 established.** Seven `stg_` models, `int_team_matches`,
+`mart_team_season` and `mart_team_form` — 10 models and 72 dbt tests, passing on
+the real snapshot and on the fixture. `mart_team_season` reconciles against the real world:
+2024/25's champions come out exactly — Liverpool 84, Barcelona 88, Napoli 82,
+Bayern 82, PSG 84 — with correct goal differences.
+
+Two things the build changed:
+
+- **§5 trap 13 was documented wrongly, and the correction matters.** Both halves
+  of a split fixture are `FINISHED` and both carry the same scoreline, so the
+  status filter does not separate them and `football_data_match_id IS NOT NULL` is
+  a second, independent filter. Trap 7 turned out to be the same twelve fixtures
+  seen from the other side.
+- **The fixture was raising false confidence.** It had no `AWARDED` match at all,
+  its split-fixture half carried a status the real data never uses, and its
+  penalties were drawn with an 8% probability that happened to produce none on
+  some seeds. All three are now present by construction, inside a *completed*
+  fixture season so the played-count assertion can see them. Each of the three
+  filters was then broken on purpose to confirm a test fails: dropping `AWARDED`,
+  dropping the Football-Data id filter, and `COALESCE`-ing xG to zero.
+
+One test was deliberately **not** written yet: the profile promised that the zero
+orphan `match_key` count (trap 4) would be tested. Phase 2 has no model that reads
+the event facts, so there is nothing yet for an orphan to be dropped *from* — the
+meaningful form of that test is "no goals lost between staging and the mart", and
+it arrives with `mart_player_season` in phase 3. What stands in for it now is the
+`not_null` test on `stg_player_events.season`, which fails if that derivation ever
+becomes a join to `fact_matches`.
 
 ---
 

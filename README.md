@@ -47,7 +47,23 @@ of the data.
 - [`notebooks/01_data_profile.ipynb`](notebooks/01_data_profile.ipynb) — what is
   actually in the data, and which documented traps are real.
 
-Phases 2–5 (metrics layer, analyses, dashboard, portfolio README) are next; see
+**Phase 2 — the metrics layer.** Done.
+
+- A **dbt project** over the snapshot: seven `stg_` models 1:1 with Gold,
+  `int_team_matches`, and the first two marts — `mart_team_season` (the league
+  table with xPTS, points − xPTS, xG difference and PPDA) and `mart_team_form`
+  (rolling xG for and against). **72 dbt tests** across 10 models pass against the
+  real snapshot and against the synthetic fixture in CI.
+- **It reconciles against the real world.** 2024/25's champions come out exactly:
+  Liverpool 84, Barcelona 88, Napoli 82, Bayern 82, PSG 84, with correct goal
+  differences. Liverpool's opening fixture is away at Ipswich, won 2-0, at
+  3.93 xG — the real one.
+- **The tests were checked by breaking the model.** Filtering on `FINISHED` alone,
+  dropping the duplicate-fixture filter, and `COALESCE`-ing xG to zero were each
+  introduced on purpose to confirm a test fails. A test suite nobody has seen fail
+  is a decoration.
+
+Phases 3–5 (analyses, dashboard, portfolio README) are next; see
 [Roadmap](#roadmap).
 
 ### What the profile found
@@ -80,6 +96,31 @@ Other findings worth naming:
 - **64 matches (1.7%) report no referee**, pointing at the `Unknown` member at
   key 0 — an official who would otherwise appear to have worked dozens of matches.
 
+### What building the metrics layer found
+
+Two corrections, both the same shape: a documented trap turned out to be a
+*different* trap, and the difference was the part that mattered.
+
+> **The twelve duplicated fixtures are not separated by `status`.** They were
+> documented as one row holding the result and one holding the xG. In fact **both
+> are `FINISHED` and both carry the same scoreline** — Understat reports the result
+> too, and all eleven comparable pairs agree on it. What the Understat half lacks
+> is Football-Data's columns. So a league table needs
+> `football_data_match_id IS NOT NULL` as a **second, independent filter** on top
+> of the status one; neither implies the other, and status alone lets a club play
+> 39 matches in a 38-match season.
+>
+> The same twelve fixtures are also all of the null xG: every counting match
+> without xG is the Football-Data half of one of them.
+
+> **The fixture was raising false confidence.** It had no `AWARDED` match at all,
+> so nothing in CI could have caught the status bug the profile had just found. Its
+> split-fixture half carried a status the real data never uses, and its penalties
+> were placed with an 8% random chance that produced *none* on some seeds — quietly
+> removing the trap the fixture existed to guarantee. All three are now present by
+> construction, inside a completed season so the played-count assertion can see
+> them.
+
 ---
 
 ## Architecture
@@ -89,12 +130,12 @@ Other findings worth naming:
           │  scripts/export_gold.py — READ_ONLY attach + contract check
           ▼
   data/gold/*.parquet + manifest.json      exact copy, no transforms
-          │  dbt build                                      (phase 2)
+          │  dbt build
           ▼
   data/analytics.duckdb
      stg_*    1:1 with Gold — renames and casts only
-     int_*    reusable reshapes
-     mart_*   the metrics, defined once
+     int_*    int_team_matches: one row per team per counting match
+     mart_*   mart_team_season, mart_team_form — the metrics, defined once
           │
           ├──► notebooks/   one question each                (phase 3)
           │
@@ -136,6 +177,10 @@ cp .env.example .env     # defaults match Part 1's docker-compose
 (cd ../football-data-engineering && docker compose up -d postgres)
 uv run python scripts/export_gold.py
 
+# --- build the metrics layer (works on the fixture or a real snapshot) -------
+# Run from the repository root; writes data/analytics.duckdb.
+uv run dbt build --project-dir dbt --profiles-dir dbt
+
 # --- read the analyses -------------------------------------------------------
 uv run jupyter lab
 ```
@@ -162,7 +207,10 @@ uv run python scripts/export_gold.py --write-contract   # commit this on its own
 ├── tests/
 │   ├── fixtures/make_gold_fixture.py   builds the synthetic snapshot CI runs on
 │   └── test_*.py
-├── dbt/                          metrics layer                      (phase 2)
+├── dbt/
+│   ├── macros/                   season_label (Part 1's August cutoff), grain test
+│   ├── models/{staging,intermediate,marts}/
+│   └── tests/                    singular tests: a wrong filter fails here
 ├── site/                         static dashboard                   (phase 4)
 └── data/                         gitignored: snapshot + DuckDB store
 ```
@@ -171,10 +219,18 @@ uv run python scripts/export_gold.py --write-contract   # commit this on its own
 
 `tests/fixtures/gold` is a hand-built Gold snapshot of a few dozen rows, in the
 contract's exact column types, carrying **every documented trap on purpose** — an
-`Unknown` member, a player who transfers mid-season, a null-xG match, a fixture
-split across two rows, duplicated shots, penalties on the penalty spot. A model
-that mishandles one fails in CI rather than in production. CI also rebuilds it
-and diffs, so it cannot silently go stale.
+`Unknown` member, a player who transfers mid-season, an abandoned-then-awarded
+match, a postponed one with a phantom `0-0`, a fixture split across two rows,
+duplicated shots, penalties on the penalty spot, every categorical value the real
+data uses. A model that mishandles one fails in CI rather than in production. CI
+also rebuilds it and diffs, so it cannot silently go stale.
+
+The traps that only a *wrong filter* exposes live inside a **completed** fixture
+season, because the assertion that catches them — every club played twice its
+number of opponents — can only run where a full fixture list is expected. And
+where the real snapshot and the fixture disagree about a trap's shape, the real
+snapshot wins: a fixture carrying a trap in a form the data does not take would
+let a broken model pass.
 
 ---
 
@@ -183,8 +239,8 @@ and diffs, so it cannot silently go stale.
 | Phase | Deliverable | Status |
 |-------|-------------|--------|
 | 1 | Snapshot export, contract check, data profile | **Done** |
-| 2 | dbt staging, `int_team_matches`, first two marts, CI on the fixture | Next |
-| 3 | Analyses: points vs xPTS; is finishing a repeatable skill? | |
+| 2 | dbt staging, `int_team_matches`, first two marts, CI on the fixture | **Done** |
+| 3 | Analyses: points vs xPTS; is finishing a repeatable skill? | Next |
 | 4 | Static dashboard — league table, team, players, shots | |
 | 5 | README as the portfolio front page | |
 

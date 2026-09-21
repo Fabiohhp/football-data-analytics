@@ -1,0 +1,42 @@
+version: 2
+
+sources:
+  - name: gold
+    description: >
+      The Gold star schema of Part 1 (`../football-data-engineering`), read as the
+      Parquet snapshot that `scripts/export_gold.py` writes to `data/gold/` next
+      to a `manifest.json` recording the export time, per-table row counts and the
+      `match_date` range. Nothing here reaches Part 1's PostgreSQL: the snapshot
+      pins every number to one known version of the data, and the same models run
+      against the synthetic fixture in CI.
+
+      The columns and types are a contract, enforced at export time against
+      `contracts/gold_columns.json` — so a Part 1 schema change surfaces as a
+      failed export rather than as a wrong number in a chart.
+    config:
+      # dbt-duckdb reads the snapshot straight off disk, and `{name}` becomes the
+      # table name. `GOLD_SNAPSHOT_DIR` is read here rather than through a dbt var
+      # because dbt renders Jinja in this file but **not** inside a var's default in
+      # dbt_project.yml — a `{{ env_var(...) }}` written there arrives as a literal
+      # string and DuckDB fails to parse it. This is the same environment variable
+      # snapshot.py reads, so one setting aims the notebooks and this project at the
+      # same data, and CI points both at the synthetic fixture.
+      #
+      # A relative path resolves from the directory dbt is invoked from, which
+      # CLAUDE.md §11 fixes as the repository root.
+      external_location: "read_parquet('{{ env_var('GOLD_SNAPSHOT_DIR', 'data/gold') }}/{name}.parquet')"
+    tables:
+      - name: fact_matches
+        description: One row per match. Football-Data result plus Understat xG, npxG, PPDA, deep and xPTS per side.
+      - name: fact_player_events
+        description: One row per player per match, from Understat.
+      - name: fact_shots
+        description: One row per shot, from Understat, in normalized [0, 1] coordinates.
+      - name: dim_teams
+        description: One row per club (SCD Type 1). `canonical_name` is the conformed cross-source name.
+      - name: dim_players
+        description: One row per player *version* (SCD Type 2). `understat_player_id` is the durable key.
+      - name: dim_referees
+        description: One row per official (SCD Type 1).
+      - name: dim_stadiums
+        description: One row per ground (SCD Type 1). `city` and `capacity` are always null — Gold has no source for them.

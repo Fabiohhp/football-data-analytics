@@ -1,0 +1,151 @@
+version: 2
+
+models:
+  - name: mart_team_season
+    description: |
+      **Grain: one club per league-season** (`team_key` × `season` ×
+      `competition_code`). The league table, plus the expected-goals columns that
+      question 1 of CLAUDE.md §8 is answered from.
+
+      Built entirely from `int_team_matches`, so the status and duplicate-fixture
+      filters are already applied and no notebook or dashboard page re-applies them.
+      Reconciles against the real world: 2024/25's final tables are exact in all five
+      leagues — Liverpool 84, Barcelona 88, Napoli 82, Bayern 82, PSG 84 — with
+      correct goal differences.
+
+      **Read the coverage columns before the xG columns.** `matches_with_xg`,
+      `matches_with_xpts` and `matches_with_ppda` say how many of `played` each set
+      of figures actually covers, because a null is a match the two sources never
+      paired and is excluded rather than zeroed (§5 trap 7).
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [team_key, season, competition_code]
+    columns:
+      - name: team_key
+        tests: [not_null]
+      - name: team_name
+        description: The conformed club name from `dim_teams`, ready to display.
+        tests: [not_null]
+      - name: season
+        tests: [not_null]
+      - name: competition_code
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["PL", "PD", "BL1", "SA", "FL1"]
+      - name: played
+        description: |
+          Counting matches, i.e. `FINISHED` or `AWARDED` and holding a Football-Data
+          id. In a completed season this equals `scheduled_per_team`, which
+          `assert_completed_seasons_have_full_fixture_lists` checks.
+        tests: [not_null]
+      - name: won
+        description: Matches with 3 points. `won + drawn + lost = played`, tested by `assert_results_add_up_to_played`.
+      - name: points
+        description: The league table's points column. 3 / 1 / 0, from the scoreline.
+        tests: [not_null]
+      - name: points_per_match
+        description: Points divided by `played` — the only fair comparison when one of the seasons involved is still in progress.
+      - name: table_position
+        description: |
+          1 = top. Ordered by points, then goal difference, then goals scored, then
+          `team_key` so the order is stable between runs. **La Liga and Serie A break
+          ties on head-to-head results first**, which Gold carries no aggregate for,
+          so a position here can differ from the official table where two clubs
+          finish level on points. Nothing else in this mart is affected.
+        tests: [not_null]
+      - name: matches_with_xg
+        description: How many of `played` have xG. The denominator behind every xG column here.
+        tests: [not_null]
+      - name: xg_for
+        description: Summed expected goals across `matches_with_xg` matches — not across `played`.
+      - name: xg_difference
+        description: "`xg_for - xg_against`. The predictor question 1 of §8 weighs against points."
+      - name: xg_for_per_match
+        description: Per-match xG, dividing by `matches_with_xg` rather than `played` so a missing fixture does not read as a quiet match.
+      - name: npxg_for
+        description: |
+          Non-penalty expected goals, as Understat reports it **per match**. This is
+          the one place npxG is available without going to `fact_shots` — there is no
+          non-penalty xG per *player* anywhere in Gold (§5 trap 8).
+      - name: xpts
+        description: Summed Understat expected points, across `matches_with_xpts` matches.
+      - name: points_in_xpts_matches
+        description: |
+          Points earned in exactly the matches that have an xPTS. The honest left hand
+          side of `points_minus_xpts`: comparing a full season of points against a
+          partial season of xPTS would invent an overperformance out of a missing
+          fixture.
+      - name: points_minus_xpts
+        description: |
+          `points_in_xpts_matches - xpts`. Positive means the club took more points
+          than its chances deserved. The headline of §8 question 1 — and a quantity
+          that regresses towards zero, which that analysis has to account for rather
+          than call skill.
+      - name: ppda
+        description: |
+          Mean passes allowed per defensive action over `matches_with_ppda` matches.
+          **Lower means more pressing** (§5 trap 12).
+      - name: scheduled_per_team
+        description: "`2 × (clubs in this league-season − 1)`: a full double round robin. Derived from the clubs present, never a hardcoded 38 or 34."
+        tests: [not_null]
+      - name: team_fixtures_complete
+        description: Whether this club has played its full fixture list.
+      - name: is_season_complete
+        description: |
+          Whether **every** club in this league-season has. The in-progress season is
+          why this column exists: season totals are not comparable across a complete
+          and a partial season, and the answer belongs here rather than in a notebook
+          filter or a dashboard dropdown.
+        tests: [not_null]
+
+  - name: mart_team_form
+    description: |
+      **Grain: one club per counting match** (`team_key` × `match_key`), with rolling
+      xG for and against over that club's last `form_window` matches.
+
+      The dashboard's Team page draws this. Every row carries `form_window` so a
+      chart states its window, and `window_matches` / `window_xg_matches` so it can
+      tell a genuine dip from a short window at the start of a season or a fixture
+      the sources never paired. Windows never cross a season or a competition.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [team_key, match_key]
+    columns:
+      - name: team_key
+        tests: [not_null]
+      - name: match_key
+        tests: [not_null]
+      - name: team_name
+        tests: [not_null]
+      - name: opponent_name
+        description: The opposing club's conformed name, so a form chart can label its fixtures.
+        tests: [not_null]
+      - name: match_number
+        description: Which match of the season this is for this club, 1-based, ordered by date then `match_key`.
+        tests: [not_null]
+      - name: form_window
+        description: The number of matches the rolling columns cover — the `form_window` dbt var, carried so every chart can state it.
+        tests: [not_null]
+      - name: window_matches
+        description: |
+          How many matches are actually behind this row's rolling values: less than
+          `form_window` for a club's first matches of a season.
+        tests: [not_null]
+      - name: window_xg_matches
+        description: |
+          How many of those have xG. `rolling_xg_for` averages only those, and is null
+          when there are none — nulls are never averaged as zero (§5 trap 7).
+        tests: [not_null]
+      - name: rolling_xg_for
+        description: Mean expected goals created over the window. Null when no match in the window has xG.
+      - name: rolling_xg_against
+        description: Mean expected goals conceded over the window.
+      - name: rolling_points
+        description: Mean points over the window — the results line that sits beside the xG lines.
+      - name: points
+        description: Points from this single match, so the chart can show results alongside the trend.
+        tests: [not_null]

@@ -29,7 +29,7 @@ It is its own repository, sitting next to the pipeline that feeds it:
 | Phase | Scope | Where | Status |
 |-------|-------|-------|--------|
 | Part 1 — Data Engineering & Architecture | Ingestion, Airflow, Bronze/Silver/Gold, data quality | `../football-data-engineering` | Complete |
-| **Part 2 — Analytics & BI** | Metrics layer, analyses, dashboard | **this repository** | **In progress — phase 4 of 5 done** |
+| **Part 2 — Analytics & BI** | Metrics layer, analyses, dashboard | **this repository** | **Complete — 5 of 5 phases** |
 | Part 3 — Machine Learning | Match outcome / xG models | separate repository, later | Not started |
 
 **The deliverable is insight a reviewer can read and reproduce** — not a
@@ -474,7 +474,9 @@ football-data-analytics/
 │   └── gold_columns.json      # expected Gold columns + types; the export fails on drift
 ├── scripts/
 │   ├── export_gold.py         # Part 1 PostgreSQL -> data/gold/*.parquet + manifest.json
-│   └── export_site_data.py    # marts -> site/data/*.json (select and format only)
+│   ├── export_site_data.py    # marts -> site/data/*.json (select and format only)
+│   └── export_readme_images.py  # notebook figures + dashboard screenshots -> docs/images/
+├── docs/images/               # committed: what the README shows (the site is not hosted)
 ├── dbt/
 │   ├── dbt_project.yml        # min_minutes and form_window vars; everything materialized
 │   ├── profiles.yml           # DuckDB path only, no secrets
@@ -583,7 +585,7 @@ the next.
 | 2 ✅ | dbt staging, `int_team_matches`, the first two marts, CI | `dbt build` passes locally, and on the fixture in CI |
 | 3 ✅ | Analyses #1 and #2 from §8 | Each ends in a written answer with its caveats |
 | 4 ◐ | Static dashboard site | Runs locally from marts, passes the CI smoke test; **hosting still undecided (§13)** |
-| 5 | README as the portfolio front page | A reviewer understands the findings without running anything |
+| 5 ✅ | README as the portfolio front page | A reviewer understands the findings without running anything |
 
 **What phase 1 established.** The export, the contract check and the fixture are
 in place, and `notebooks/01_data_profile.ipynb` measured every trap in §5 against
@@ -683,6 +685,26 @@ Three things the browser found that nothing else would have:
 That is the argument for the smoke test being a real browser rather than an HTML
 parser. It skips itself when Chromium cannot start, so `uv run pytest -q` still
 works on a fresh clone.
+
+**What phase 5 established.** The README is now the portfolio front page: findings
+first, then the dashboard, then how it is built and why it can be trusted, then how to
+run it. The phase-by-phase build log it had grown into is gone — that history lives
+here in §12, which is where it belongs.
+
+`scripts/export_readme_images.py` generates what the README shows. Charts are **lifted
+out of the notebooks' committed outputs** rather than redrawn by a copy of the plotting
+code, so a README figure cannot drift from the analysis it illustrates; screenshots
+come from the real pages in headless Chromium. Both halves skip themselves when their
+inputs are missing.
+
+`docs/images/` is **committed**, unlike `data/` and `site/data/`. It is 1.5 MB of
+rendered output, not the dataset, and with hosting undecided (§13) it is the only way a
+reviewer sees the dashboard.
+
+One accuracy fix worth remembering: the first draft claimed three documented traps had
+been wrong. Two were (§5 traps 6 and 13); the own-goal findings were *additions* to a
+trap that was already correct. A README that boasts about rigour is the last place to
+round three up from two.
 
 ---
 

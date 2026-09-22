@@ -318,8 +318,16 @@ th.chart, td.chart { width: 44%; min-width: 220px; padding-inline: 0; }
 }
 .pitch .line { fill: none; stroke: var(--pitch-line); stroke-width: 0.25; }
 .pitch .spot { fill: var(--pitch-line); }
-.pitch .shot { fill: var(--even); fill-opacity: .5; stroke: none; }
-.pitch .shot.goal { fill: var(--ahead); fill-opacity: .85; }
+/* A club's season is ~500 shots, most of them crowded into the same few square
+ * metres in front of goal. Opaque markers turn that into one solid blob, so both
+ * classes are translucent and goals carry a thin surface-coloured rim — overlapping
+ * goals then read as discs rather than a single mass, which is the whole point of
+ * picking them out. */
+.pitch .shot { fill: var(--even); fill-opacity: .3; stroke: none; }
+.pitch .shot.goal {
+  fill: var(--ahead); fill-opacity: .72;
+  stroke: var(--pitch); stroke-width: .18; stroke-opacity: .8;
+}
 .pitch .shot:hover { fill-opacity: 1; }
 
 /* --- notes, states, footer ----------------------------------------------- */

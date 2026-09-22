@@ -51,7 +51,10 @@ async function shotsFor(teamKey) {
 /** The attacking half, with its markings. */
 function drawPitch() {
   const node = svg("svg", {
-    class: "pitch", viewBox: `-1 -1 ${WIDTH + 2} ${HALF + 2}`,
+    // The extra room at the top is not decoration: a shot taken on the goal line
+    // has a marker whose radius reaches past it, and a clipped half-disc reads as
+    // a rendering bug rather than as a tap-in.
+    class: "pitch", viewBox: `-2 -4 ${WIDTH + 4} ${HALF + 6}`,
     role: "img", "aria-label": "Shot map on the attacking half of a pitch",
   });
 

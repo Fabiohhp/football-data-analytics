@@ -149,3 +149,186 @@ models:
       - name: points
         description: Points from this single match, so the chart can show results alongside the trend.
         tests: [not_null]
+
+  - name: mart_player_season
+    description: |
+      **Grain: one player per season** (`understat_player_id` × `season`) — totals,
+      per-90s, and the finishing measures behind §8 question 2.
+
+      **Not player × season × club**, which is what CLAUDE.md §6 originally
+      planned. The reasoning behind §5 trap 1 applies to a club split just as it
+      does to a key split: 94 player-seasons in 2024/25 and 92 in 2025/26 span two
+      clubs while clearing the minutes floor, and at club grain each half is a
+      shorter season that often clears no floor at all. "Does this player finish
+      well?" needs the whole season. The club survives as `primary_team_name` (most
+      minutes) plus a `clubs` count, and `int_player_matches` keeps the per-club
+      detail.
+
+      Reconciles against the real world: 2024/25 reads Mbappé 31, Salah 29 with 18
+      assists, Kane 26 — and Retegui 25, which is the number you lose to 24 by
+      applying the league-table filter to player totals (§5 trap 13).
+
+      **Use `np_goals_minus_npxg`, not `goals_minus_xg`,** for anything about
+      finishing. Understat's per-player xG includes penalties (§5 trap 8), so the
+      second measure mostly describes a player's penalty duty.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [understat_player_id, season]
+    columns:
+      - name: understat_player_id
+        description: The durable player key — the grain, and the reason a transferred player is one row rather than two (§5 trap 1).
+        tests: [not_null]
+      - name: player_name
+        description: From the player's current `dim_players` version. Exactly one version per player is current (4,048 of 4,048), so this cannot fan out the grain.
+        tests: [not_null]
+      - name: season
+        tests: [not_null]
+      - name: primary_team_key
+        description: The club where the player logged the most minutes that season; ties break on `team_key` so the choice is stable between runs.
+        tests: [not_null]
+      - name: clubs
+        description: How many clubs the player appeared for that season. Greater than 1 for roughly 3% of rows — read `primary_team_name` with that in mind.
+        tests: [not_null]
+      - name: competition_code
+        description: |
+          The league of the primary club. Null only when that club has no counting
+          matches in the season — which happens when every appearance the player
+          made was on a match the snapshot cannot resolve. Zero rows today;
+          `assert_missing_leagues_are_explained` holds the nulls to that reason
+          rather than asserting there are none, because the CI fixture has one on
+          purpose (§5 trap 4).
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["PL", "PD", "BL1", "SA", "FL1"]
+      - name: minutes
+        description: Total minutes. The denominator of every per-90 below, and what the minutes floor is applied to.
+        tests: [not_null]
+      - name: goals
+        description: All goals, penalties included. Own goals are **not** here — they are in `own_goals`.
+        tests: [not_null]
+      - name: np_goals
+        description: Non-penalty goals, counted from the shots.
+        tests: [not_null]
+      - name: npxg
+        description: Non-penalty expected goals, from `int_shots`. The only route to npxG per player — Gold has none (§5 trap 8).
+        tests: [not_null]
+      - name: goals_minus_xg
+        description: |
+          Finishing **including penalties**, and therefore mostly a statement about
+          penalty duty for anyone who takes them. Kept for comparison; not the
+          measure any conclusion should rest on.
+      - name: np_goals_minus_npxg
+        description: |
+          Non-penalty goals minus non-penalty expected goals: the finishing measure
+          §8 question 2 tests for repeatability. Positive means more goals than the
+          chances were worth. Expect it to regress heavily towards zero — that is
+          the finding, not a flaw.
+      - name: npxg_per_90
+        description: Non-penalty expected goals per 90 — chance *volume*, the thing finishing is usually contrasted with.
+      - name: min_minutes
+        description: The `min_minutes` dbt var in force when this was built, carried so a chart can state its threshold without hardcoding it again.
+        tests: [not_null]
+      - name: meets_minutes_floor
+        description: Whether `minutes >= min_minutes`. 3,160 of 7,467 player-seasons clear the default 900.
+        tests: [not_null]
+
+  - name: mart_shots
+    description: |
+      **Grain: one row per distinct shot** (`shot_key`) with player, team, match and
+      season attached — the shot map on the dashboard and §8 question 4 read this.
+
+      93,988 rows: Gold's 94,034 less the 46 duplicates of §5 trap 14, removed
+      upstream in `int_shots`. Coordinates stay in Understat's [0, 1] space and are
+      **not** rescaled (§5 trap 10): higher `x` is nearer the goal being attacked,
+      `y = 0.5` is the middle, the penalty spot is exactly `(0.885, 0.5)`.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [shot_key]
+    columns:
+      - name: shot_key
+        tests: [unique, not_null]
+      - name: player_name
+        tests: [not_null]
+      - name: team_name
+        description: The club the shot was taken for, from the shot's own `team_key` — never the player's current club (§5 trap 2).
+        tests: [not_null]
+      - name: season
+        description: |
+          From the shot's match. Null only when no match in the snapshot carries
+          the shot's `understat_match_id` — zero rows today, one in the CI fixture
+          by design (§5 trap 4).
+      - name: competition_code
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["PL", "PD", "BL1", "SA", "FL1"]
+      - name: x
+        description: Understat's normalized distance along the pitch, [0, 1]. Higher is closer to the goal being attacked.
+        tests: [not_null]
+      - name: y
+        description: Understat's normalized position across the pitch, [0, 1]; 0.5 is the middle.
+        tests: [not_null]
+      - name: is_goal
+        description: "`result = 'Goal'`, which correctly excludes own goals (§5 trap 11)."
+        tests: [not_null]
+      - name: is_penalty
+        description: Penalties sit on one point of the pitch and average 0.756 xG — the check that confirms the coordinate orientation (§5 trap 10).
+        tests: [not_null]
+      - name: result
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["Goal", "OwnGoal", "MissedShots", "BlockedShot", "SavedShot", "ShotOnPost"]
+
+  - name: mart_team_season_half
+    description: |
+      **Grain: one club per half-season** (`team_key` × `season` ×
+      `competition_code` × `season_half`) — the same league table as
+      `mart_team_season`, cut in two.
+
+      Built for §8 question 1, which asks whether a points-over-xPTS gap persists:
+      that needs the gap measured over one stretch of matches and compared with
+      what the next stretch did. It is a mart rather than a notebook CTE because
+      the honest `points − xPTS` needs the coverage discipline of §5 trap 7, and
+      that calculation may not exist in two places.
+
+      **Halves are by match number, not by date.** Clubs play the same number of
+      matches but not on the same days, so a calendar cut-off would put a different
+      number of fixtures either side for different clubs. By match number each half
+      is exactly half a fixture list.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [team_key, season, competition_code, season_half]
+    columns:
+      - name: team_key
+        tests: [not_null]
+      - name: team_name
+        tests: [not_null]
+      - name: season_half
+        description: 1 or 2. Match numbers 1..N/2 and N/2+1..N, where N is the club's full fixture list.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, 2]
+                quote: false
+      - name: is_season_complete
+        description: |
+          Whether every club in the league-season finished its fixture list. **Only
+          complete seasons halve meaningfully** — an in-progress season still
+          produces rows, and its second half is partial — so any comparison of the
+          two halves filters on this.
+        tests: [not_null]
+      - name: played
+        description: Matches in this half. Equal to `scheduled_per_team / 2` in a complete season.
+        tests: [not_null]
+      - name: points_minus_xpts
+        description: |
+          Points over expected points **within this half**, counted over the matches
+          that carry an xPTS. The quantity question 1 tests for persistence.
+      - name: xg_difference_per_match
+        description: xG created minus conceded, per match with xG — the rival predictor question 1 weighs against points.

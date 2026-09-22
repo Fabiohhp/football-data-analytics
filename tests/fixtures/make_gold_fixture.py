@@ -563,7 +563,11 @@ def build_events_and_shots(
             "is_home": True,
             "x": 0.1200,
             "y": 0.5100,
-            "xg": 0.0100,
+            # Exactly zero, as every one of the 299 own goals in the real snapshot
+            # is. Understat records the row but assigns it no expected goals, which
+            # is why including own goals in a player's summed shot xG changes
+            # nothing — and why `fact_player_events.xg` still reconciles.
+            "xg": 0.0000,
             "result": "OwnGoal",
             "situation": "OpenPlay",
             "shot_type": "OtherBodyPart",
@@ -602,9 +606,15 @@ def build_events_and_shots(
             "goals": 1,
             "own_goals": 0,
             "assists": 0,
-            "shots": 3,
+            # One shot, one goal, 0.23 xG — the orphan shot added just below, and
+            # nothing else. The pair has to agree: `int_player_matches` joins the
+            # two facts on `(understat_match_id, player_key)` and asserts that the
+            # reported shot count and xG match the shot rows exactly, so an orphan
+            # that contradicted itself would fail a test that is about the join,
+            # not about the orphan.
+            "shots": 1,
             "key_passes": 1,
-            "xg": 0.4100,
+            "xg": 0.2300,
             "xa": 0.0500,
             "xg_chain": 0.6200,
             "xg_buildup": 0.1100,

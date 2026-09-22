@@ -63,8 +63,18 @@ of the data.
   introduced on purpose to confirm a test fails. A test suite nobody has seen fail
   is a decoration.
 
-Phases 3–5 (analyses, dashboard, portfolio README) are next; see
-[Roadmap](#roadmap).
+**Phase 3 — the first two analyses.** Done.
+
+- [`notebooks/02_points_vs_xpts.ipynb`](notebooks/02_points_vs_xpts.ipynb) — do points
+  that run ahead of expected points stay ahead?
+- [`notebooks/03_is_finishing_repeatable.ipynb`](notebooks/03_is_finishing_repeatable.ipynb)
+  — is finishing a skill, or mostly noise?
+- Six more models to support them, taking the project to **16 models and 131 dbt
+  tests**: `mart_player_season`, `mart_shots`, `mart_team_season_half` and the
+  intermediates behind them. npxG is rebuilt from the shot fact, because Gold has no
+  non-penalty xG per player.
+
+Phases 4–5 (dashboard, portfolio README) are next; see [Roadmap](#roadmap).
 
 ### What the profile found
 
@@ -121,6 +131,41 @@ Two corrections, both the same shape: a documented trap turned out to be a
 > construction, inside a completed season so the played-count assertion can see
 > them.
 
+### What the analyses found
+
+**Points that run ahead of expected points do not stay ahead.** Across 192
+club-seasons, the correlation between a club's first-half and second-half
+points-over-xPTS gap is **+0.13, with an interval that reaches zero**. The clubs
+furthest ahead of their expected points at the halfway mark gave up around five
+points of gap — and around five *actual* points — in the second half, and the clubs
+furthest behind recovered by about as much.
+
+But the obvious follow-up does not hold up either:
+
+> As a **single number**, first-half xG difference and xPTS are *not* distinguishably
+> better than first-half points at tracking second-half points — the paired bootstrap
+> intervals on the differences both include zero. What xG difference *does* do is add
+> information on top of points: with points already in the model, it still carries a
+> clearly non-zero coefficient and lifts explained variance from 0.482 to 0.541. The
+> answer is "read both", not "xG wins".
+
+**Finishing is mostly noise — and two seasons cannot find the signal underneath.**
+Non-penalty finishing per 90 repeats season to season at **r ≈ 0.10** across 1,022
+players who cleared 900 minutes in both complete seasons. The very same players'
+shot volume repeats at **r ≈ 0.90** and their npxG per 90 at **r ≈ 0.85**, so this is
+a noisy *quantity*, not a noisy dataset.
+
+> Restricting to players with real shooting volume was meant to settle whether a
+> skill hides underneath. It did not: the estimate clears zero at npxG ≥ 5
+> (133 players) but *not* at npxG ≥ 1 (585 players — more statistical power), and is
+> inconclusive at npxG ≥ 10 (24 players). One threshold out of three is not how a
+> solid effect behaves, so it is reported as "cannot distinguish a very small effect
+> from none".
+>
+> For anything forward-looking, chance volume is the number to read: last season's
+> npxG per 90 tracks next season's non-penalty goals per 90 at r ≈ 0.78, while last
+> season's finishing is very slightly *negative*.
+
 ---
 
 ## Architecture
@@ -134,10 +179,10 @@ Two corrections, both the same shape: a documented trap turned out to be a
           ▼
   data/analytics.duckdb
      stg_*    1:1 with Gold — renames and casts only
-     int_*    int_team_matches: one row per team per counting match
-     mart_*   mart_team_season, mart_team_form — the metrics, defined once
+     int_*    team-per-match, player-per-match, deduplicated shots, club seasons
+     mart_*   team season + half, team form, player season, shots
           │
-          ├──► notebooks/   one question each                (phase 3)
+          ├──► notebooks/   one question each
           │
           └──► scripts/export_site_data.py                   (phase 4)
                     │
@@ -181,7 +226,7 @@ uv run python scripts/export_gold.py
 # Run from the repository root; writes data/analytics.duckdb.
 uv run dbt build --project-dir dbt --profiles-dir dbt
 
-# --- read the analyses -------------------------------------------------------
+# --- read the analyses (they read the marts, so build those first) -----------
 uv run jupyter lab
 ```
 
@@ -202,7 +247,9 @@ uv run python scripts/export_gold.py --write-contract   # commit this on its own
 ├── notebooks/                    one question each, outputs committed
 ├── src/football_analytics/
 │   ├── gold.py                   the contract, and drift detection
-│   ├── snapshot.py               the loader every notebook starts from
+│   ├── snapshot.py               the Parquet snapshot loader
+│   ├── marts.py                  the mart loader; refuses a stale database
+│   ├── stats.py                  seeded bootstrap intervals
 │   └── viz.py                    chart style and pitch plots
 ├── tests/
 │   ├── fixtures/make_gold_fixture.py   builds the synthetic snapshot CI runs on
@@ -240,16 +287,16 @@ let a broken model pass.
 |-------|-------------|--------|
 | 1 | Snapshot export, contract check, data profile | **Done** |
 | 2 | dbt staging, `int_team_matches`, first two marts, CI on the fixture | **Done** |
-| 3 | Analyses: points vs xPTS; is finishing a repeatable skill? | Next |
-| 4 | Static dashboard — league table, team, players, shots | |
+| 3 | Analyses: points vs xPTS; is finishing a repeatable skill? | **Done** |
+| 4 | Static dashboard — league table, team, players, shots | Next |
 | 5 | README as the portfolio front page | |
 
 ### Question backlog
 
-1. Which teams' points run ahead of or behind their xPTS — and does the gap
+1. ✅ Which teams' points run ahead of or behind their xPTS — and does the gap
    persist into the second half of the season, or does xG difference predict what
    comes next better than points do?
-2. Is finishing (goals − xG) a repeatable player skill, or mostly noise?
+2. ✅ Is finishing (goals − xG) a repeatable player skill, or mostly noise?
 3. How big is home advantage, and does it differ between the big-5 leagues?
 4. Where do goals come from? Conversion by pitch zone, situation and body part.
 5. Does pressing intensity (PPDA) go with better results, in every league?

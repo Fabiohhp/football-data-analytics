@@ -29,7 +29,7 @@ It is its own repository, sitting next to the pipeline that feeds it:
 | Phase | Scope | Where | Status |
 |-------|-------|-------|--------|
 | Part 1 — Data Engineering & Architecture | Ingestion, Airflow, Bronze/Silver/Gold, data quality | `../football-data-engineering` | Complete |
-| **Part 2 — Analytics & BI** | Metrics layer, analyses, dashboard | **this repository** | **In progress — phase 2 of 5 done** |
+| **Part 2 — Analytics & BI** | Metrics layer, analyses, dashboard | **this repository** | **In progress — phase 3 of 5 done** |
 | Part 3 — Machine Learning | Match outcome / xG models | separate repository, later | Not started |
 
 **The deliverable is insight a reviewer can read and reproduce** — not a
@@ -146,6 +146,10 @@ Considered and not chosen:
 - **Staging (`stg_`).** One model per Gold table: rename, cast `NUMERIC` to
   `DOUBLE`, derive `season` where it is missing. No filtering, no business logic.
 - **Intermediate (`int_`).** Reshapes that more than one mart builds on.
+  **Join the event facts to each other on `understat_match_id`, not `match_key`.**
+  Both facts carry it NOT NULL, so the join cannot be broken by trap 4, and it is
+  also the safe key for deduplicating shots — a `match_key` dedup would group two
+  different unmatched matches together, since SQL treats NULLs as equal.
 - **Marts (`mart_`).** Where metrics are defined. **Once a calculation appears in
   two places, it belongs in a mart.** Exploratory notebooks may query `stg_`
   models freely; a finished analysis's headline numbers, and every dashboard
@@ -209,7 +213,11 @@ schema" section of that repository's README. Scope is the **big-5 leagues only**
    `assert_xg_nulls_are_not_zeroed` check the count exactly. PPDA is null slightly
    more often than xG (one extra match), so count its coverage separately.
 8. **There is no non-penalty xG per player.** `fact_player_events.xg` includes
-   penalties. Build npxG from `fact_shots` where `situation <> 'Penalty'`.
+   penalties. Build npxG from `fact_shots` where `situation <> 'Penalty'` —
+   `int_player_matches` does this once and `mart_player_season` carries the result.
+   The reconstruction is trustworthy because it is checked: summing a player's shot
+   xG reproduces `fact_player_events.xg` to within 0.0002 on every one of the
+   115,410 player-match rows, tested on every build.
 9. **Not in Gold at all:** possession, passes, tackles (FBref is blocked in
    Part 1), and stadium city and capacity. Do not design metrics around them and
    do not impute them.
@@ -231,7 +239,11 @@ schema" section of that repository's README. Scope is the **big-5 leagues only**
     {OpenPlay, FromCorner, SetPiece, DirectFreekick, Penalty}, `shot_type` ∈
     {RightFoot, LeftFoot, Head, OtherBodyPart} — asserted by `accepted_values`
     tests in `dbt/models/staging/schema.yml`, which fail if Part 1 ever loads a
-    value this repository has not decided about.
+    value this repository has not decided about. Two more measured facts about own
+    goals: every one of the 299 carries **exactly 0.0000 xG**, and
+    `fact_player_events.shots` does **not** count them — the shot rows equal the
+    reported shot count plus the own goals, exactly, on all 115,410 rows. So a shot
+    *volume* metric excludes them and an xG sum need not care.
 12. **Read metrics in the right direction:** a *lower* PPDA means *more*
     pressing; `xpts` is Understat's expected points for the match.
 13. **Twelve fixtures exist as two rows** (2 in 2024/25, 9 in 2025/26, 1 in
@@ -319,8 +331,23 @@ First marts, in this order:
 |------|-------|-------|--------|
 | `mart_team_season` | team × season × competition | the league table, plus xPTS, points − xPTS, xG difference, PPDA | ✅ phase 2 |
 | `mart_team_form` | team × match | rolling xG for / against over the last N matches | ✅ phase 2 |
-| `mart_player_season` | player (`understat_player_id`) × season × team | totals, per-90s, goals − xG, npxG | phase 3 |
-| `mart_shots` | shot | shots with player, team, match and season attached | phase 3 |
+| `mart_player_season` | player (`understat_player_id`) × **season** | totals, per-90s, goals − xG, npxG | ✅ phase 3 |
+| `mart_shots` | shot | shots with player, team, match and season attached | ✅ phase 3 |
+| `mart_team_season_half` | team × season × competition × half | the league table cut in two, for the persistence question | ✅ phase 3 |
+
+Two deviations from the plan above, both made while building phase 3:
+
+- **`mart_player_season` is player × season, not player × season × team.** The
+  reasoning behind trap 1 applies to a club split as much as to a key split: 94
+  player-seasons in 2024/25 and 92 in 2025/26 span two clubs while clearing the
+  minutes floor, and at club grain each half is a shorter season that often clears
+  no floor at all. "Does this player finish well?" needs the whole season. The club
+  survives as `primary_team_name` plus a `clubs` count, and `int_player_matches`
+  keeps the per-club detail.
+- **`mart_team_season_half` was added**, because question 1 needs the
+  points-over-xPTS gap measured over one stretch of matches and compared with the
+  next, and doing that in a notebook would have re-implemented the coverage-aware
+  `points − xPTS` that `mart_team_season` already defines.
 
 ---
 
@@ -362,8 +389,8 @@ into Part 3.
 
 | # | Question | Built on | Needs |
 |---|----------|----------|-------|
-| 1 | Which teams' points run ahead of or behind their xPTS — and does the gap persist into the second half of the season, or does xG difference predict what comes next better than points do? | `int_team_matches`, `mart_team_season` | 1 season |
-| 2 | Is finishing (goals − xG) a repeatable player skill, or mostly noise? | `mart_player_season` | 2 seasons |
+| 1 ✅ | Which teams' points run ahead of or behind their xPTS — and does the gap persist into the second half of the season, or does xG difference predict what comes next better than points do? | `mart_team_season_half` | answered in `02_points_vs_xpts.ipynb` |
+| 2 ✅ | Is finishing (goals − xG) a repeatable player skill, or mostly noise? | `mart_player_season` | answered in `03_is_finishing_repeatable.ipynb` |
 | 3 | How big is home advantage, and does it differ between the big-5 leagues? | `int_team_matches` | 1–2 seasons |
 | 4 | Where do goals come from? Conversion by pitch zone, situation and body part | `mart_shots` | 1 season |
 | 5 | Does pressing intensity (PPDA) go with better results, and does that hold in every league? | `int_team_matches` | 1 season |
@@ -433,8 +460,10 @@ football-data-analytics/
 │   │   └── test_unique_combination.sql  # composite-grain test, vendored not dbt_utils
 │   ├── models/
 │   │   ├── staging/           # stg_* — 1:1 with Gold, + sources.yml, schema.yml
-│   │   ├── intermediate/      # int_team_matches
-│   │   └── marts/             # mart_team_season, mart_team_form
+│   │   ├── intermediate/      # int_team_matches, int_player_matches, int_shots,
+│   │   │                      #   int_club_seasons
+│   │   └── marts/             # mart_team_season, _form, _season_half,
+│   │                          #   mart_player_season, mart_shots
 │   └── tests/                 # the singular tests: a wrong filter fails here
 ├── notebooks/                 # NN_question.ipynb, outputs committed
 ├── site/                      # static dashboard: index.html + one HTML file per page
@@ -444,7 +473,9 @@ football-data-analytics/
 │   └── data/                  # gitignored: JSON written by export_site_data.py
 ├── src/football_analytics/    # shared Python, with pytest tests — never copy-pasted
 │   ├── gold.py                # the contract itself, and drift detection
-│   ├── snapshot.py            # the loader every notebook starts from; .citation()
+│   ├── snapshot.py            # the Parquet loader; .citation()
+│   ├── marts.py               # the mart loader; refuses a DB stale vs the snapshot
+│   ├── stats.py               # seeded bootstrap intervals, so outputs reproduce
 │   └── viz.py                 # chart style + pitch plots in Understat coordinates
 ├── tests/
 │   ├── fixtures/
@@ -490,6 +521,7 @@ cp .env.example .env
 uv run python scripts/export_gold.py
 uv run python scripts/export_gold.py --write-contract   # only when Gold changed
 
+# The analyses read the marts, so build them before opening a notebook.
 uv run jupyter lab
 
 # --- the metrics layer: needs only the snapshot (or the fixture) -------------
@@ -516,7 +548,7 @@ the next.
 | 0 ✅ | Backfill 2024/25 and 2025/26 — **in Part 1** | Part 1's quality checks pass on two complete seasons |
 | 1 ✅ | Repo skeleton, export script, contract check, `01_data_profile.ipynb` | We know what is really in the data: matches per league and season, null-xG rate, `Unknown`-member and null-`match_key` counts |
 | 2 ✅ | dbt staging, `int_team_matches`, the first two marts, CI | `dbt build` passes locally, and on the fixture in CI |
-| 3 | Analyses #1 and #2 from §8 | Each ends in a written answer with its caveats |
+| 3 ✅ | Analyses #1 and #2 from §8 | Each ends in a written answer with its caveats |
 | 4 | Static dashboard site | Runs locally from marts, passes the CI smoke test; hosting decided (§13) |
 | 5 | README as the portfolio front page | A reviewer understands the findings without running anything |
 
@@ -556,6 +588,46 @@ meaningful form of that test is "no goals lost between staging and the mart", an
 it arrives with `mart_player_season` in phase 3. What stands in for it now is the
 `not_null` test on `stg_player_events.season`, which fails if that derivation ever
 becomes a join to `fact_matches`.
+
+**What phase 3 established.** Two written analyses, and six more models to support
+them: `int_club_seasons`, `int_shots`, `int_player_matches`, `mart_player_season`,
+`mart_shots` and `mart_team_season_half`. The project is now 16 models and 131 dbt
+tests, passing on the real snapshot and on the fixture.
+
+The findings, both of which came out more nuanced than the question implied:
+
+- **Question 1 — the points-over-xPTS gap does not persist.** Across 192
+  club-seasons, first-half gap against second-half gap correlates at +0.13 with an
+  interval reaching zero; the biggest overperformers give up ~5 points of gap *and*
+  ~5 actual points. But xPTS and xG difference are **not** distinguishably better
+  than points as a single number (paired Δr intervals include zero) — while xG
+  difference *does* add significantly on top of points in a regression (R² 0.482 →
+  0.541). The answer is "use both", not "xG wins".
+- **Question 2 — finishing is mostly noise, and the sample cannot find the signal.**
+  Finishing per 90 repeats at r ≈ 0.10 across 1,022 players, where the same players'
+  shot volume repeats at r ≈ 0.90 and npxG per 90 at r ≈ 0.85 — so it is a noisy
+  quantity, not a noisy dataset. Restricting to real shot-takers was meant to settle
+  it and did not: the estimate clears zero at npxG ≥ 5 (n = 133) but not at npxG ≥ 1
+  (n = 585, more power) and is inconclusive at npxG ≥ 10 (n = 24). Reported as
+  "cannot distinguish a very small effect from none" rather than as a finding.
+
+Three things the build added to §5, all measured:
+
+- own goals carry **exactly 0.0000 xG**, and `fact_player_events.shots` does not
+  count them — shot rows equal reported shots plus own goals, exactly (trap 11);
+- `fact_player_events.xg` equals the sum of that player's shot xG to within 0.0002
+  on all 115,410 rows, which is what makes the rebuilt npxG trustworthy (trap 8);
+- the event facts should be joined to each other on `understat_match_id`, which is
+  NOT NULL in both, rather than on the nullable `match_key` (trap 4).
+
+The trap-4 test promised in phase 2 now exists as
+`assert_no_player_goals_lost`: totals must survive from `stg_player_events` to
+`mart_player_season`, whether the orphan count is zero or not.
+
+Two notebook-reproducibility lessons worth keeping: bootstrap helpers take a
+**default seed** (`stats.DEFAULT_SEED`), and a cell prints **once** — consecutive
+`print()` calls get split into stdout chunks unpredictably, which makes an identical
+re-run produce a different notebook file.
 
 ---
 

@@ -97,6 +97,17 @@ one_row_per_side as (
 
 select
     *,
+
+    -- Which match of the season this is for this club, 1-based. Lives here rather
+    -- than in a mart because two marts order a club's season the same way and the
+    -- ordering may only be defined once: `mart_team_form` rolls a window over it
+    -- and `mart_team_season_half` cuts the season in two by it. `match_key` breaks
+    -- ties so two matches on one date always order the same way between runs.
+    row_number() over (
+        partition by team_key, season, competition_code
+        order by match_date, match_key
+    ) as match_number,
+
     goals_for - goals_against as goal_difference,
     xg_for - xg_against as xg_difference,
 

@@ -90,3 +90,125 @@ models:
         description: Understat's expected points for this club in this match (§5 trap 12).
       - name: deep_for
         description: Understat "deep" passes completed by this club — passes into the area around the box.
+
+  - name: int_club_seasons
+    description: |
+      **Grain: one club per season** (`team_key` × `season`), with the competition
+      it played in.
+
+      Exists because `competition_code` is NULL on the Understat half of every
+      split fixture (§5 trap 13), and the player events and shots of those fixtures
+      hang off exactly that half. Reading a league off the match would leave 368
+      player rows and 307 shots without one, and **33 player-seasons with no league
+      at all**. A club plays one competition per season — 0 of 288 club-seasons
+      span two — so its own counting matches answer the question for every row.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [team_key, season]
+    columns:
+      - name: team_key
+        tests: [not_null]
+      - name: season
+        tests: [not_null]
+      - name: competition_code
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["PL", "PD", "BL1", "SA", "FL1"]
+
+  - name: int_shots
+    description: |
+      **Grain: one row per distinct shot** (`shot_key` survives; duplicates are
+      dropped), with the match, season and competition attached.
+
+      Deduplicated here rather than in `mart_shots` because `int_player_matches`
+      needs the same rows to build npxG from, and the same calculation may not
+      exist twice (CLAUDE.md §4). 93,988 rows from 94,034 in Gold — the 46
+      difference is §5 trap 14.
+
+      Duplicates are matched on the *shape* of a shot, using `understat_match_id`
+      rather than the documented `match_key`: `match_key` is nullable, SQL groups
+      NULLs together, and a `match_key`-based dedup would therefore treat shots
+      from two different unmatched matches as copies of each other.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [shot_key]
+    columns:
+      - name: shot_key
+        tests: [unique, not_null]
+      - name: understat_match_id
+        description: Non-null on every shot, which is why the joins upstream and downstream use it rather than `match_key` (§5 trap 4).
+        tests: [not_null]
+      - name: understat_player_id
+        description: The durable player key, resolved from `player_key` (§5 trap 1).
+        tests: [not_null]
+      - name: season
+        description: From the shot's match. Null only if the shot's match is not in the snapshot — zero rows today.
+      - name: competition_code
+        description: From `int_club_seasons`, not from the match, so a split fixture's shots still carry a league.
+      - name: is_goal
+        description: "`result = 'Goal'`. Excludes own goals deliberately: an `OwnGoal` row sits on the scorer's own team and is a goal for the opponent (§5 trap 11)."
+        tests: [not_null]
+      - name: is_penalty
+        description: "`situation = 'Penalty'`. The basis of every npxG figure in the project (§5 trap 8)."
+        tests: [not_null]
+
+  - name: int_player_matches
+    description: |
+      **Grain: one row per player per match** (`player_event_key`), 1:1 with
+      `stg_player_events` — every row survives, no filter, all joins LEFT.
+
+      Adds the two things Understat's player line does not carry: a season, and
+      everything non-penalty. npxG has to be built from the shots because there is
+      no non-penalty xG per player anywhere in Gold (§5 trap 8).
+
+      **It does not apply the league-table filters.** A player's goals live on the
+      Understat half of a split fixture, so `football_data_match_id IS NOT NULL`
+      would lose a goal or two a season — Retegui reads 25 here and would read 24
+      with it. That is the opposite choice from `int_team_matches`, taken
+      deliberately and stated in both places (§5 trap 13).
+
+      Two cross-source invariants hold exactly, and are tested rather than assumed:
+      the reported shot count equals the shot rows minus own goals, and
+      `fact_player_events.xg` equals the summed shot xG to within 0.0002.
+    tests:
+      - unique_combination:
+          arguments:
+            columns: [player_event_key]
+    columns:
+      - name: player_event_key
+        tests: [unique, not_null]
+      - name: understat_player_id
+        description: Aggregate by this, never by `player_key` (§5 trap 1).
+        tests: [not_null]
+      - name: team_key
+        description: The club the player turned out for **in this match** (§5 trap 2).
+        tests: [not_null]
+      - name: season
+        description: Derived in staging from the row's own `match_date`, so an orphan row keeps its season (§5 traps 4 and 5).
+        tests: [not_null]
+      - name: competition_code
+        description: |
+          From `int_club_seasons`. Nullable in principle — a club-season with no
+          counting matches would leave it empty — and non-null for every row today.
+      - name: np_goals
+        description: Goals from non-penalty shots. Excludes own goals, which are a different `result` value entirely (§5 trap 11).
+        tests: [not_null]
+      - name: npxg
+        description: Expected goals from non-penalty, non-own-goal shots — the denominator that matches `np_goals`.
+        tests: [not_null]
+      - name: shots_deduplicated
+        description: |
+          Shot rows for this player in this match, own goals excluded, duplicates
+          removed. Equals Understat's own `shots` column exactly, on all 115,410
+          rows.
+        tests: [not_null]
+      - name: shot_xg
+        description: |
+          Summed xG over **all** this player's shot rows in the match, own goals
+          included — the figure that reconciles with `fact_player_events.xg`.
+          Including them costs nothing: every own goal carries exactly 0.0000 xG.
+        tests: [not_null]

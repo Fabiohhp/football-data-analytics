@@ -38,6 +38,7 @@ with team_matches as (
         m.goals_for,
         m.goals_against,
         m.goal_difference,
+        m.match_number,
         m.points,
         m.xg_for,
         m.xg_against,
@@ -68,12 +69,7 @@ select
     tm.xg_difference,
     tm.xpts,
 
-    -- Which match of the season this is for this club. `match_key` breaks ties so
-    -- two matches on one date always order the same way from run to run.
-    row_number() over (
-        partition by tm.team_key, tm.season, tm.competition_code
-        order by tm.match_date, tm.match_key
-    ) as match_number,
+    tm.match_number,
 
     {{ form_window }} as form_window,
 

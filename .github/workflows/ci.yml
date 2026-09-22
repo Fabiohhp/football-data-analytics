@@ -71,6 +71,13 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
+      # The analyses read the marts, not the snapshot, so the metrics layer has to
+      # exist before a notebook can open it. `marts.open_marts()` refuses a database
+      # that is out of date with the snapshot, which is exactly what an un-built or
+      # stale one would be here.
+      - name: Build the metrics layer
+        run: uv run dbt build --project-dir dbt --profiles-dir dbt
+
       - name: Execute every notebook
         run: |
           uv run python - <<'PY'

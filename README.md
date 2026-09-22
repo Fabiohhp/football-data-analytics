@@ -74,7 +74,22 @@ of the data.
   intermediates behind them. npxG is rebuilt from the shot fact, because Gold has no
   non-penalty xG per player.
 
-Phases 4–5 (dashboard, portfolio README) are next; see [Roadmap](#roadmap).
+**Phase 4 — the dashboard.** Built; hosting still undecided.
+
+- Four static pages in [`site/`](site): league table (points against xPTS), team
+  (rolling xG), players (per-90 leaderboard with a minutes filter), and a shot map
+  drawn as hand-written SVG in Understat's own coordinates.
+- **No npm, no framework, no build step, and no charting library** — the dot plot is
+  positioned spans, the charts are inline SVG. Fonts are vendored, so the site works
+  offline and makes no request to any other host.
+- `scripts/export_site_data.py` writes the JSON from the marts. It **refuses to read
+  any table that is not a mart**, so "no metric logic in the frontend" is enforced by
+  the code rather than by discipline.
+- **18 browser smoke tests** load every page in headless Chromium and fail on any
+  console error — which is how two real bugs were caught that no linter or dbt test
+  could see (see below).
+
+Phase 5 (README as the portfolio front page) is next; see [Roadmap](#roadmap).
 
 ### What the profile found
 
@@ -166,6 +181,22 @@ a noisy *quantity*, not a noisy dataset.
 > npxG per 90 tracks next season's non-penalty goals per 90 at r ≈ 0.78, while last
 > season's finishing is very slightly *negative*.
 
+### What building the dashboard found
+
+Two bugs that were invisible to ruff, to pytest and to all 131 dbt tests, and that a
+real browser found immediately:
+
+> **The league table dragged the whole page sideways on a phone** — by 212px at a
+> 390px viewport. The table scrolls correctly inside its own container, but a
+> table's min-content width escapes `overflow: hidden` and reaches the document.
+> `contain: layout` on the card fixes it, and the smoke test now asserts that no
+> page scrolls sideways at phone width.
+>
+> **The players page opened completely empty.** It defaulted to the newest season,
+> which is five matches old, where no player has cleared the 900-minute floor. Every
+> page now opens on the newest *complete* season, and the empty state explains
+> itself rather than showing nothing.
+
 ---
 
 ## Architecture
@@ -188,6 +219,7 @@ a noisy *quantity*, not a noisy dataset.
                     │
                     ▼
                site/  static dashboard: HTML + CSS + JS over JSON
+                      league table · team · players · shots
 ```
 
 Two rules hold the design together. **A metric is defined once**, in dbt, and
@@ -228,7 +260,15 @@ uv run dbt build --project-dir dbt --profiles-dir dbt
 
 # --- read the analyses (they read the marts, so build those first) -----------
 uv run jupyter lab
+
+# --- the dashboard -----------------------------------------------------------
+uv run python scripts/export_site_data.py    # marts -> site/data/*.json
+uv run python -m http.server -d site         # then open http://localhost:8000
 ```
+
+The pages fetch JSON, so opening the HTML files directly does not work — they need
+a server. The browser smoke tests need Chromium once per machine
+(`uv run playwright install --with-deps chromium`) and skip themselves without it.
 
 If Part 1's schema has changed, the export refuses to run and names every
 difference. Review what it affects, then:
@@ -258,7 +298,10 @@ uv run python scripts/export_gold.py --write-contract   # commit this on its own
 │   ├── macros/                   season_label (Part 1's August cutoff), grain test
 │   ├── models/{staging,intermediate,marts}/
 │   └── tests/                    singular tests: a wrong filter fails here
-├── site/                         static dashboard                   (phase 4)
+├── site/                         static dashboard: 4 pages, no framework
+│   ├── css/app.css               the whole design system
+│   ├── js/                       common.js + one file per page
+│   └── vendor/fonts/             Archivo + IBM Plex Mono, vendored (OFL)
 └── data/                         gitignored: snapshot + DuckDB store
 ```
 
@@ -288,8 +331,8 @@ let a broken model pass.
 | 1 | Snapshot export, contract check, data profile | **Done** |
 | 2 | dbt staging, `int_team_matches`, first two marts, CI on the fixture | **Done** |
 | 3 | Analyses: points vs xPTS; is finishing a repeatable skill? | **Done** |
-| 4 | Static dashboard — league table, team, players, shots | Next |
-| 5 | README as the portfolio front page | |
+| 4 | Static dashboard — league table, team, players, shots | **Built** (hosting undecided) |
+| 5 | README as the portfolio front page | Next |
 
 ### Question backlog
 
@@ -312,6 +355,8 @@ let a broken model pass.
   and nothing is imputed.
 - **Predictive modelling is out of scope** here — that is Part 3. This repository
   explains what happened; it does not forecast.
-- **`data/` is gitignored.** Football-Data.org and Understat each have terms of
-  use, and whether any snapshot or dashboard JSON may be published is an open
-  decision (`CLAUDE.md` §13). Until then CI runs on the synthetic fixture.
+- **`data/` and `site/data/` are gitignored.** Football-Data.org and Understat each
+  have terms of use, and whether any snapshot or dashboard JSON may be published is
+  an open decision (`CLAUDE.md` §13) — which is why the dashboard is built but not
+  deployed. The site is static files with vendored fonts, so either answer works
+  with no rework. Until then CI runs on the synthetic fixture.

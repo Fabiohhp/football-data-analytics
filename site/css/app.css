@@ -1,0 +1,347 @@
+/* The dashboard's whole design system.
+ *
+ * One stylesheet for four pages, because four pages of pre-computed rows do not
+ * need more than one (CLAUDE.md §9). Everything is a custom property at the top,
+ * so a colour or a font changes in one place.
+ *
+ * Fonts are vendored in site/vendor/fonts and declared below. Nothing here reaches
+ * another host at runtime: the site works offline, and it cannot change appearance
+ * because a CDN did.
+ */
+
+/* --- vendored fonts ------------------------------------------------------ */
+/* Archivo is a variable font with a width axis, which is what `font-stretch`
+ * below is doing on the headings. IBM Plex Mono carries every number, so columns
+ * of figures line up. */
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  src: url("../vendor/fonts/archivo-v25-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  src: url("../vendor/fonts/archivo-v25-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../vendor/fonts/ibm-plex-mono-v20-400-latin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../vendor/fonts/ibm-plex-mono-v20-500-latin.woff2") format("woff2");
+}
+
+/* --- tokens -------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+  --ground: #eef1ed;
+  --surface: #fbfcfa;
+  --surface-2: #f1f4f0;
+  --ink: #101a14;
+  --ink-2: #48564e;
+  --muted: #66726b;
+  --hair: #dce2dc;
+  --ahead: #2a78d6;      /* points above xPTS; xG created; a goal */
+  --behind: #e34948;     /* points below xPTS; xG conceded */
+  --even: #9aa39d;
+  --pill-bg: #101a14;
+  --pill-ink: #f4f7f3;
+  --focus: #2a78d6;
+  --shadow: 0 1px 2px rgba(16, 26, 20, .06), 0 10px 28px rgba(16, 26, 20, .10);
+  --pitch: #e7ece6;
+  --pitch-line: #c7d1c7;
+  --font: "Archivo", "Helvetica Neue", Arial, system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground: #0b100d;
+    --surface: #131a16;
+    --surface-2: #19221d;
+    --ink: #edf2ed;
+    --ink-2: #b4c0b8;
+    --muted: #85918a;
+    --hair: #242e28;
+    --ahead: #3987e5;
+    --behind: #e66767;
+    --even: #6c756f;
+    --pill-bg: #edf2ed;
+    --pill-ink: #0b100d;
+    --focus: #3987e5;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 28px rgba(0, 0, 0, .45);
+    --pitch: #18211b;
+    --pitch-line: #2b362e;
+  }
+}
+
+/* --- base ---------------------------------------------------------------- */
+* { box-sizing: border-box; }
+html, body { background: var(--ground); }
+body {
+  margin: 0;
+  font-family: var(--font);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1100px; margin-inline: auto; padding-inline: 20px; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+code, .mono { font-family: var(--mono); font-size: .86em; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* --- top bar ------------------------------------------------------------- */
+.topbar {
+  position: sticky; top: 0; z-index: 10;
+  background: color-mix(in oklab, var(--ground) 90%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--hair);
+}
+.topbar .wrap { display: flex; align-items: center; gap: 12px 28px; padding-block: 12px; flex-wrap: wrap; }
+.brand {
+  display: flex; align-items: center; gap: 10px;
+  color: var(--ink); text-decoration: none;
+  font-stretch: 78%; font-weight: 800; font-size: 18px;
+  letter-spacing: .03em; text-transform: uppercase;
+}
+.tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+.tabs a {
+  padding: 7px 13px; border-radius: 999px;
+  color: var(--ink-2); text-decoration: none; font-weight: 500; font-size: 14px; white-space: nowrap;
+}
+.tabs a:hover { background: var(--surface-2); color: var(--ink); }
+.tabs a[aria-current="page"] { background: var(--pill-bg); color: var(--pill-ink); }
+/* Every page states the snapshot's match_date range (CLAUDE.md §9). */
+.snapshot {
+  margin-left: auto; display: flex; gap: 8px; align-items: baseline;
+  font-family: var(--mono); font-size: 12px; color: var(--ink-2); white-space: nowrap;
+}
+.snapshot span:first-child { color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-size: 11px; }
+@media (max-width: 760px) { .tabs { order: 3; width: 100%; } }
+@media (max-width: 420px) { .snapshot span:first-child { display: none; } }
+
+/* --- page head ----------------------------------------------------------- */
+.head { padding-block: 40px 8px; }
+.eyebrow { margin: 0; font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); }
+h1 {
+  margin: 10px 0 14px;
+  font-stretch: 70%; font-weight: 800;
+  font-size: clamp(34px, 6vw, 58px); line-height: .98; letter-spacing: -.005em;
+  text-wrap: balance; max-width: 18ch;
+}
+.lede { margin: 0; max-width: 62ch; font-size: 16.5px; color: var(--ink-2); }
+
+/* --- controls ------------------------------------------------------------ */
+.controls { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: flex-end; margin-block: 26px 18px; }
+.ctl { display: grid; gap: 6px; min-width: 0; max-width: 100%; }
+.ctl-label { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.seg {
+  display: flex; gap: 2px; padding: 3px; max-width: 100%;
+  background: var(--surface); border: 1px solid var(--hair); border-radius: 999px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.seg button {
+  border: 0; background: transparent; font: inherit; font-size: 14px; color: var(--ink-2);
+  padding: 6px 13px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+}
+.seg button:hover { color: var(--ink); background: var(--surface-2); }
+.seg button[aria-pressed="true"] { background: var(--pill-bg); color: var(--pill-ink); }
+.select { position: relative; display: inline-block; max-width: 100%; }
+.select select {
+  appearance: none; -webkit-appearance: none; max-width: 100%;
+  font: inherit; font-size: 14px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--hair); border-radius: 999px;
+  padding: 7px 34px 7px 14px; cursor: pointer;
+}
+.select::after {
+  content: ""; position: absolute; right: 15px; top: 50%;
+  width: 6px; height: 6px; margin-top: -5px;
+  border-right: 1.5px solid var(--ink-2); border-bottom: 1.5px solid var(--ink-2);
+  transform: rotate(45deg); pointer-events: none;
+}
+.slider { display: flex; align-items: center; gap: 10px; }
+.slider input[type="range"] { width: 170px; accent-color: var(--ahead); }
+.slider output { font-family: var(--mono); font-size: 13px; color: var(--ink-2); min-width: 9ch; }
+
+/* --- cards --------------------------------------------------------------- */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile { background: var(--surface); border: 1px solid var(--hair); border-radius: 14px; padding: 14px 18px 16px; display: grid; gap: 4px; }
+.tile-label { font-size: 13px; color: var(--ink-2); }
+.tile-main { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.tile-team { font-stretch: 80%; font-weight: 750; font-size: 23px; line-height: 1.15; }
+.tile-value { font-weight: 700; font-size: 26px; line-height: 1; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+.tile-sub { font-size: 13px; color: var(--muted); }
+
+.board {
+  background: var(--surface); border: 1px solid var(--hair); border-radius: 16px;
+  overflow: hidden;
+  /* `contain: layout` keeps a wide table's intrinsic width inside this card.
+   * Without it the table below still scrolls correctly in its own container, but
+   * its min-content width leaks out to the document and the whole page scrolls
+   * sideways — measured at 212px on a 390px viewport, which is a real drag-the-page
+   * bug on a phone and not a rounding artefact. `overflow: hidden` alone does not
+   * stop it. The browser smoke test asserts the page never scrolls sideways. */
+  contain: layout;
+}
+.board-head {
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+  gap: 10px 24px; padding: 14px 18px; border-bottom: 1px solid var(--hair);
+}
+.board-title { margin: 0; font-stretch: 80%; font-weight: 750; font-size: 19px; }
+.board-foot { padding: 12px 18px; border-top: 1px solid var(--hair); font-size: 12.5px; color: var(--muted); }
+.board-body { padding: 16px 18px 18px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.key-dot, .key-ring, .key-line {
+  width: 10px; height: 10px; border-radius: 50%; box-sizing: border-box; flex: none;
+}
+.key-dot.ahead { background: var(--ahead); }
+.key-dot.behind { background: var(--behind); }
+.key-dot.even { background: var(--even); }
+.key-ring { border: 2px solid var(--muted); background: var(--surface); }
+.key-line { width: 16px; height: 3px; border-radius: 2px; }
+.key-line.ahead { background: var(--ahead); }
+.key-line.behind { background: var(--behind); }
+
+/* --- tables -------------------------------------------------------------- */
+.table-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: separate; border-spacing: 0; }
+th {
+  font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--muted); text-align: right; padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--hair); white-space: nowrap; background: var(--surface);
+}
+th[data-sort] { cursor: pointer; user-select: none; }
+th[data-sort]:hover { color: var(--ink); }
+th[aria-sort] { color: var(--ink); }
+th[aria-sort]::after { content: " ↓"; }
+th[aria-sort="ascending"]::after { content: " ↑"; }
+td {
+  text-align: right; padding: 0 12px; height: 38px;
+  border-bottom: 1px solid var(--hair);
+  font-variant-numeric: tabular-nums; font-size: 14.5px; white-space: nowrap;
+  background: var(--row-bg);
+}
+tbody tr { --row-bg: var(--surface); }
+tbody tr:hover { --row-bg: var(--surface-2); }
+tbody tr:last-child td { border-bottom: 0; }
+th.name, td.name { text-align: left; }
+th.name, td.name { position: sticky; left: 0; z-index: 1; }
+td.name { font-weight: 600; }
+td.sub { font-weight: 400; color: var(--ink-2); font-size: 13.5px; }
+.pos {
+  display: inline-block; width: 2.2ch; margin-right: 10px;
+  font-family: var(--mono); font-size: 12px; color: var(--muted); text-align: right;
+}
+td.strong { font-weight: 700; }
+td.muted { color: var(--ink-2); }
+
+/* Direction markers: triangle up = ahead, down = behind, dot = level. */
+.tri {
+  display: inline-block; width: 0; height: 0; margin-right: 6px; vertical-align: 1px;
+  border-left: 4.5px solid transparent; border-right: 4.5px solid transparent;
+}
+.tri.ahead { border-bottom: 7px solid var(--ahead); }
+.tri.behind { border-top: 7px solid var(--behind); }
+.tri.even { width: 7px; height: 7px; border: 0; border-radius: 50%; background: var(--even); }
+.tile-value .tri { margin-right: 0; border-left-width: 6px; border-right-width: 6px; }
+.tile-value .tri.ahead { border-bottom-width: 10px; }
+.tile-value .tri.behind { border-top-width: 10px; }
+
+/* --- the league table's dot-and-ring plot -------------------------------- */
+th.chart, td.chart { width: 44%; min-width: 220px; padding-inline: 0; }
+.axis, .track { position: relative; margin-inline: 16px; }
+.axis { height: 14px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.tick { position: absolute; top: 0; transform: translateX(-50%); }
+.track { height: 38px; }
+.grid { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--hair); }
+.conn { position: absolute; top: 50%; height: 2px; margin-top: -1px; border-radius: 1px; background: var(--c); }
+.ring, .dot {
+  position: absolute; top: 50%; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px;
+  border-radius: 50%; box-sizing: border-box; box-shadow: 0 0 0 2px var(--row-bg);
+}
+.ring { border: 2px solid var(--muted); background: var(--row-bg); }
+.dot { background: var(--c); }
+.ahead { --c: var(--ahead); }
+.behind { --c: var(--behind); }
+.even { --c: var(--even); }
+@media (max-width: 640px) {
+  .c-optional { display: none; }
+  th.chart, td.chart { min-width: 170px; }
+}
+
+/* --- charts drawn as inline SVG ------------------------------------------ */
+.chart-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart-svg .axis-line { stroke: var(--hair); stroke-width: 1; }
+.chart-svg .axis-text { fill: var(--muted); font-family: var(--mono); font-size: 10px; }
+.chart-svg .series-for { stroke: var(--ahead); }
+.chart-svg .series-against { stroke: var(--behind); }
+.chart-svg .series { fill: none; stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; }
+.chart-svg .result-dot { stroke: var(--surface); stroke-width: 1.2; }
+.chart-svg .win { fill: var(--ahead); }
+.chart-svg .draw { fill: var(--even); }
+.chart-svg .loss { fill: var(--behind); }
+
+/* --- the shot map -------------------------------------------------------- */
+/* The pitch is drawn in metres, goal at the top, so the markings are real
+ * proportions and Understat's [0, 1] coordinates map onto it by multiplication
+ * alone (CLAUDE.md §5, trap 10). See js/shots.js for the two lines that do it. */
+.pitch {
+  display: block; width: 100%; height: auto; background: var(--pitch); border-radius: 12px;
+  /* A half pitch is taller than it is wide, so at full container width it would be
+   * most of a laptop screen. Capped and centred instead. */
+  max-width: 520px; margin-inline: auto;
+}
+.pitch .line { fill: none; stroke: var(--pitch-line); stroke-width: 0.25; }
+.pitch .spot { fill: var(--pitch-line); }
+.pitch .shot { fill: var(--even); fill-opacity: .5; stroke: none; }
+.pitch .shot.goal { fill: var(--ahead); fill-opacity: .85; }
+.pitch .shot:hover { fill-opacity: 1; }
+
+/* --- notes, states, footer ----------------------------------------------- */
+.note { max-width: 68ch; margin-block: 28px 0; }
+.note h2 { margin: 0 0 6px; font-stretch: 80%; font-weight: 750; font-size: 19px; }
+.note p { margin: 0 0 8px; color: var(--ink-2); font-size: 15px; }
+.note a { color: var(--ink); text-underline-offset: 3px; }
+.foot {
+  margin-top: 44px; padding-block: 18px 36px; border-top: 1px solid var(--hair);
+  font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap;
+  gap: 6px 20px; justify-content: space-between;
+}
+.state { padding: 28px 18px; text-align: center; color: var(--ink-2); }
+.state.error { color: var(--behind); }
+.state code { display: block; margin-top: 8px; color: var(--ink-2); }
+
+.tip {
+  position: fixed; z-index: 20; pointer-events: none; min-width: 170px;
+  background: var(--pill-bg); color: var(--pill-ink);
+  border-radius: 10px; padding: 10px 12px; box-shadow: var(--shadow); font-size: 13px;
+}
+.tip-title { font-weight: 600; margin-bottom: 6px; }
+.tip-row { display: grid; grid-template-columns: auto 1fr; gap: 2px 16px; font-variant-numeric: tabular-nums; }
+.tip-row span { opacity: .72; }
+.tip-row strong { text-align: right; font-weight: 700; }

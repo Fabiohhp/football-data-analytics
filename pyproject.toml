@@ -31,6 +31,10 @@ dev = [
     # CI re-executes every notebook to prove the committed outputs still run.
     "nbclient>=0.10",
     "nbformat>=5.10",
+    # The dashboard's smoke test drives a real headless browser, so a page that
+    # throws on load fails CI. Playwright rather than Selenium because it ships its
+    # own browser and needs no Node (CLAUDE.md §9).
+    "pytest-playwright>=0.5",
 ]
 
 [build-system]
@@ -55,3 +59,9 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    # The dashboard smoke tests need a headless browser and an exported site/data.
+    # They skip themselves when either is missing, so `pytest -q` still works on a
+    # fresh clone; `pytest -m "not site"` skips them outright.
+    "site: browser smoke tests for the static dashboard",
+]

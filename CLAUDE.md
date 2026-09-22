@@ -29,7 +29,7 @@ It is its own repository, sitting next to the pipeline that feeds it:
 | Phase | Scope | Where | Status |
 |-------|-------|-------|--------|
 | Part 1 — Data Engineering & Architecture | Ingestion, Airflow, Bronze/Silver/Gold, data quality | `../football-data-engineering` | Complete |
-| **Part 2 — Analytics & BI** | Metrics layer, analyses, dashboard | **this repository** | **In progress — phase 3 of 5 done** |
+| **Part 2 — Analytics & BI** | Metrics layer, analyses, dashboard | **this repository** | **In progress — phase 4 of 5 done** |
 | Part 3 — Machine Learning | Match outcome / xG models | separate repository, later | Not started |
 
 **The deliverable is insight a reviewer can read and reproduce** — not a
@@ -439,6 +439,29 @@ Rules:
 - **Part 3 shows predictions the same way** — as pre-computed JSON the site
   reads, never a model running live.
 
+Settled while building it:
+
+- **No charting library at all.** §9 allowed one; none was needed. The league
+  table's dot plot is positioned `<span>`s, the rolling-xG chart and the shot map
+  are hand-written inline SVG, and `common.js` carries the only two pieces of chart
+  maths — a linear scale and axis ticks. `site/vendor/` holds fonts and nothing else.
+- **Fonts are vendored, not linked.** Archivo and IBM Plex Mono (both OFL), latin
+  and latin-ext only, 248 kB with the version in each filename.
+- **The JSON is split per club and per season**, because each page shows one of
+  those at a time. One 94,000-row shots file would make a phone download the whole
+  dataset to draw one club's map; per club it is 171 kB on average.
+- **Every page opens on the newest *complete* season.** Five matches into the
+  in-progress one, a league table has a two-point spread and no player has cleared
+  the minutes floor — a working page that looks broken. `defaultSeason()` in
+  `common.js` is the one definition; the in-progress season stays in every dropdown.
+- **Counting rows is allowed; summing is not.** The shot map says how many markers
+  it drew and how many are goals, which describes the view. It shows no summed xG:
+  that is a metric, and metrics come from marts.
+- **A card that holds a wide table needs `contain: layout`.** Without it the
+  table's min-content width leaks past `overflow: hidden` and drags the whole page
+  sideways — measured at 212 px on a 390 px viewport. The smoke test asserts no page
+  scrolls sideways at phone width, which is how that was found.
+
 ---
 
 ## 10. Repository Structure
@@ -466,10 +489,14 @@ football-data-analytics/
 │   │                          #   mart_player_season, mart_shots
 │   └── tests/                 # the singular tests: a wrong filter fails here
 ├── notebooks/                 # NN_question.ipynb, outputs committed
-├── site/                      # static dashboard: index.html + one HTML file per page
-│   ├── css/
-│   ├── js/                    # one file per page, plus shared helpers
-│   ├── vendor/                # third-party JS and fonts, pinned, never a CDN
+├── site/                      # static dashboard: one HTML file per page
+│   ├── index.html             #   League table — points against xPTS
+│   ├── team.html              #   Team — rolling xG, match by match
+│   ├── players.html           #   Players — per-90 leaderboard, minutes filter
+│   ├── shots.html             #   Shots — hand-drawn SVG pitch
+│   ├── css/app.css            # the whole design system, one file
+│   ├── js/                    # common.js + one file per page
+│   ├── vendor/fonts/          # Archivo + IBM Plex Mono, vendored, never a CDN
 │   └── data/                  # gitignored: JSON written by export_site_data.py
 ├── src/football_analytics/    # shared Python, with pytest tests — never copy-pasted
 │   ├── gold.py                # the contract itself, and drift detection
@@ -531,9 +558,15 @@ uv run dbt build --project-dir dbt --profiles-dir dbt
 uv run dbt test --project-dir dbt --profiles-dir dbt     # tests only
 uv run dbt docs generate --project-dir dbt --profiles-dir dbt   # lineage + grains
 
-# --- not built yet -----------------------------------------------------------
-uv run python scripts/export_site_data.py               # (phase 4)
-uv run python -m http.server -d site                    # (phase 4)
+# --- the dashboard: needs the marts built first ------------------------------
+uv run python scripts/export_site_data.py    # marts -> site/data/*.json
+uv run python -m http.server -d site         # then open http://localhost:8000
+# The pages fetch JSON, so opening the HTML files directly does not work.
+
+# The browser smoke tests skip unless Chromium is installed. Once, per machine:
+uv run playwright install --with-deps chromium   # --with-deps needs root
+uv run pytest tests/test_site.py -q
+uv run pytest -q -m "not site"                   # skip them outright
 ```
 
 ---
@@ -549,7 +582,7 @@ the next.
 | 1 ✅ | Repo skeleton, export script, contract check, `01_data_profile.ipynb` | We know what is really in the data: matches per league and season, null-xG rate, `Unknown`-member and null-`match_key` counts |
 | 2 ✅ | dbt staging, `int_team_matches`, the first two marts, CI | `dbt build` passes locally, and on the fixture in CI |
 | 3 ✅ | Analyses #1 and #2 from §8 | Each ends in a written answer with its caveats |
-| 4 | Static dashboard site | Runs locally from marts, passes the CI smoke test; hosting decided (§13) |
+| 4 ◐ | Static dashboard site | Runs locally from marts, passes the CI smoke test; **hosting still undecided (§13)** |
 | 5 | README as the portfolio front page | A reviewer understands the findings without running anything |
 
 **What phase 1 established.** The export, the contract check and the fixture are
@@ -629,6 +662,28 @@ Two notebook-reproducibility lessons worth keeping: bootstrap helpers take a
 `print()` calls get split into stdout chunks unpredictably, which makes an identical
 re-run produce a different notebook file.
 
+**What phase 4 established.** `scripts/export_site_data.py` and a four-page static
+dashboard in `site/`, with 18 browser smoke tests. No npm, no framework, no build
+step, no charting library, and no request to any other host at runtime.
+
+The export enforces its own rule rather than relying on discipline: `rows()` refuses
+any table whose name does not start with `mart_`, and every query is built from a
+table name plus a column list, so there is nowhere to put a `GROUP BY` even by
+accident.
+
+Three things the browser found that nothing else would have:
+
+- the league table dragged the whole page sideways by 212 px at phone width, because
+  a table's min-content width escapes `overflow: hidden` (fixed with
+  `contain: layout`);
+- the players page opened completely empty, because it defaulted to the
+  in-progress season where nobody has 900 minutes;
+- both were invisible to ruff, to pytest and to every dbt test.
+
+That is the argument for the smoke test being a real browser rather than an HTML
+parser. It skips itself when Chromium cannot start, so `uv run pytest -q` still
+works on a fresh clone.
+
 ---
 
 ## 13. Open decisions
@@ -641,6 +696,13 @@ re-run produce a different notebook file.
   free — but publishing the site publishes its JSON files, which are the data
   itself and can be downloaded, so this waits on the decision above.
   Screenshots and a short GIF in the README are the fallback.
+
+  **This is the one thing phase 4 did not finish, and deliberately so** — it is a
+  licensing judgement, not a technical one. The site is built so that either answer
+  works with no rework: `site/data/` is gitignored, the fonts are vendored so
+  nothing is fetched at runtime, and the whole thing is static files that any host
+  serves as-is. Deploying is `export_site_data.py` plus a copy; not deploying costs
+  screenshots in the README.
 - **Backfill depth** beyond two seasons.
 
 ---

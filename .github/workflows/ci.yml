@@ -108,6 +108,36 @@ jobs:
           print("all notebooks executed")
           PY
 
-  # Added in roadmap phase 4, once site/ exists:
-  #   - name: Smoke-test the dashboard
-  #     run: uv run pytest tests/test_site.py   # pytest-playwright, no Node
+  dashboard:
+    # The static site, built from the fixture and loaded in a real browser. Its own
+    # job because downloading Chromium is slow and nothing else needs it.
+    #
+    # This is the only test that catches what this site can actually get wrong — a
+    # renamed JSON key, a selector typo, a module that throws on load. None of those
+    # fail ruff, and none of them fail a dbt test.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      # --with-deps installs the system libraries Chromium needs, which the GitHub
+      # runner allows and a developer machine often does not. Locally the smoke
+      # tests skip themselves instead of failing when the browser cannot start.
+      - name: Install Chromium
+        run: uv run playwright install --with-deps chromium
+
+      - name: Build the metrics layer
+        run: uv run dbt build --project-dir dbt --profiles-dir dbt
+
+      - name: Export the dashboard's JSON
+        run: uv run python scripts/export_site_data.py
+
+      - name: Smoke-test the dashboard
+        run: uv run pytest tests/test_site.py -q

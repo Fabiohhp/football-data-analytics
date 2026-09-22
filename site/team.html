@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Team · Big 5 Analytics</title>
+<meta name="description" content="Rolling expected goals for and against, match by match, from a pinned data snapshot.">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header class="topbar" id="topbar"></header>
+
+<main class="wrap">
+  <section class="head">
+    <p class="eyebrow" id="eyebrow"></p>
+    <h1>How has this club been playing?</h1>
+    <p class="lede">
+      Expected goals created and conceded, averaged over a rolling window of matches, with
+      the result of each match underneath. The lines say how the club has played; the dots
+      say what it got for it.
+    </p>
+  </section>
+
+  <div class="controls">
+    <div class="ctl">
+      <span class="ctl-label" id="league-label">League</span>
+      <div class="seg" id="league" role="group" aria-labelledby="league-label"></div>
+    </div>
+    <div class="ctl">
+      <label class="ctl-label" for="season">Season</label>
+      <span class="select"><select id="season"></select></span>
+    </div>
+    <div class="ctl">
+      <label class="ctl-label" for="team">Club</label>
+      <span class="select"><select id="team"></select></span>
+    </div>
+  </div>
+
+  <section class="tiles" id="tiles" aria-label="Summary"></section>
+
+  <section class="board" aria-labelledby="board-title">
+    <div class="board-head">
+      <h2 class="board-title" id="board-title">Rolling form</h2>
+      <div class="legend">
+        <span><i class="key-line ahead"></i>xG created</span>
+        <span><i class="key-line behind"></i>xG conceded</span>
+        <span><i class="key-dot ahead"></i>Win</span>
+        <span><i class="key-dot even"></i>Draw</span>
+        <span><i class="key-dot behind"></i>Loss</span>
+      </div>
+    </div>
+    <div class="board-body" id="chart"></div>
+    <div class="board-foot" id="board-foot"></div>
+  </section>
+
+  <section class="board" style="margin-top:16px" aria-labelledby="results-title">
+    <div class="board-head"><h2 class="board-title" id="results-title">Match by match</h2></div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th class="name" scope="col">Opponent</th>
+            <th class="c-optional" scope="col">Date</th>
+            <th scope="col">H/A</th>
+            <th scope="col">Score</th>
+            <th scope="col">xG</th>
+            <th scope="col">xG ag.</th>
+            <th class="c-optional" scope="col">Pts</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="note">
+    <h2>Reading the lines</h2>
+    <p>
+      A window covers the last <span id="window-size">several</span> matches, so the first
+      few points of a season rest on fewer. Where the two sources never paired a fixture it
+      has no xG at all, and the window quietly covers fewer matches rather than counting
+      that match as zero — the footer below the chart says when that has happened.
+    </p>
+  </section>
+
+  <footer class="foot" id="foot"></footer>
+</main>
+
+<div class="tip" id="tip" role="tooltip" hidden></div>
+<script type="module" src="js/team.js"></script>
+</body>
+</html>

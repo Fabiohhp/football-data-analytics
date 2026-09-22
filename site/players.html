@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Players · Big 5 Analytics</title>
+<meta name="description" content="Per-90 player leaderboard with a minutes filter, from a pinned data snapshot.">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header class="topbar" id="topbar"></header>
+
+<main class="wrap">
+  <section class="head">
+    <p class="eyebrow" id="eyebrow"></p>
+    <h1>Who creates and takes the chances?</h1>
+    <p class="lede">
+      Per-90 rates, so a substitute and an ever-present can be compared. Penalties are
+      stripped out of the goals and the expected goals: Understat's per-player xG includes
+      them, and a penalty taker's numbers otherwise say more about the spot kick than the
+      player.
+    </p>
+  </section>
+
+  <div class="controls">
+    <div class="ctl">
+      <label class="ctl-label" for="season">Season</label>
+      <span class="select"><select id="season"></select></span>
+    </div>
+    <div class="ctl">
+      <span class="ctl-label" id="league-label">League</span>
+      <div class="seg" id="league" role="group" aria-labelledby="league-label"></div>
+    </div>
+    <div class="ctl">
+      <label class="ctl-label" for="minutes">Minimum minutes</label>
+      <span class="slider">
+        <input type="range" id="minutes" min="0" max="3000" step="90" value="900">
+        <output id="minutes-out" for="minutes"></output>
+      </span>
+    </div>
+  </div>
+
+  <section class="board" aria-labelledby="board-title">
+    <div class="board-head">
+      <h2 class="board-title" id="board-title">Per-90 leaderboard</h2>
+      <div class="legend">
+        <span>Click a column to sort</span>
+      </div>
+    </div>
+    <div class="table-scroll" id="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th class="name" scope="col">Player</th>
+            <th class="c-optional" scope="col">Club</th>
+            <th data-sort="minutes" scope="col">Min</th>
+            <th data-sort="np_goals" scope="col">npG</th>
+            <th data-sort="np_goals_per_90" scope="col">npG/90</th>
+            <th data-sort="npxg_per_90" aria-sort="descending" scope="col">npxG/90</th>
+            <th data-sort="xa_per_90" class="c-optional" scope="col">xA/90</th>
+            <th data-sort="shots_per_90" class="c-optional" scope="col">Sh/90</th>
+            <th data-sort="finishing" scope="col">npG − npxG</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="board-foot" id="board-foot"></div>
+  </section>
+
+  <section class="note">
+    <h2>On the finishing column</h2>
+    <p>
+      npG − npxG is how many more non-penalty goals a player scored than their chances
+      were worth. It is the most tempting column here and the least predictive: the
+      analysis behind this dashboard found it barely repeats from one season to the next,
+      while shot volume repeats strongly. Read it as a description of the season that
+      happened, not a forecast of the next one.
+    </p>
+  </section>
+
+  <footer class="foot" id="foot"></footer>
+</main>
+
+<div class="tip" id="tip" role="tooltip" hidden></div>
+<script type="module" src="js/players.js"></script>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Shots · Big 5 Analytics</title>
+<meta name="description" content="Shot maps for a club or a player, in Understat coordinates, from a pinned data snapshot.">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header class="topbar" id="topbar"></header>
+
+<main class="wrap">
+  <section class="head">
+    <p class="eyebrow" id="eyebrow"></p>
+    <h1>Where do the shots come from?</h1>
+    <p class="lede">
+      Every shot, placed where it was taken, sized by the chance it was worth. Goals are
+      picked out in colour. The goal being attacked is at the top.
+    </p>
+  </section>
+
+  <div class="controls">
+    <div class="ctl">
+      <span class="ctl-label" id="league-label">League</span>
+      <div class="seg" id="league" role="group" aria-labelledby="league-label"></div>
+    </div>
+    <div class="ctl">
+      <label class="ctl-label" for="season">Season</label>
+      <span class="select"><select id="season"></select></span>
+    </div>
+    <div class="ctl">
+      <label class="ctl-label" for="team">Club</label>
+      <span class="select"><select id="team"></select></span>
+    </div>
+    <div class="ctl">
+      <label class="ctl-label" for="player">Player</label>
+      <span class="select"><select id="player"></select></span>
+    </div>
+    <div class="ctl">
+      <span class="ctl-label" id="situation-label">Situation</span>
+      <div class="seg" id="situation" role="group" aria-labelledby="situation-label"></div>
+    </div>
+  </div>
+
+  <section class="board" aria-labelledby="board-title">
+    <div class="board-head">
+      <h2 class="board-title" id="board-title">Shot map</h2>
+      <div class="legend">
+        <span><i class="key-dot ahead"></i>Goal</span>
+        <span><i class="key-dot even"></i>Everything else</span>
+        <span>Marker area is the shot's xG</span>
+      </div>
+    </div>
+    <div class="board-body" id="pitch"></div>
+    <div class="board-foot" id="board-foot"></div>
+  </section>
+
+  <section class="note">
+    <h2>Reading the map</h2>
+    <p>
+      Coordinates are Understat's, normalised to a 0–1 pitch and drawn here without
+      rescaling — the same orientation the notebooks use. Every penalty therefore lands on
+      exactly one point, which is the check that confirms the axes are the right way round.
+    </p>
+    <p>
+      Own goals are shown with the shots because that is how Understat records them: they
+      are a shot result, on the team of the player who scored them. They are never counted
+      as goals for this club.
+    </p>
+  </section>
+
+  <footer class="foot" id="foot"></footer>
+</main>
+
+<div class="tip" id="tip" role="tooltip" hidden></div>
+<script type="module" src="js/shots.js"></script>
+</body>
+</html>

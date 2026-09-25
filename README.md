@@ -90,9 +90,21 @@ that would each have produced a plausible wrong number.
 
 ## The dashboard
 
-Four static pages over the same tested marts. No framework, no build step, no
-charting library, and no request to any other host at runtime — the fonts are
-vendored, so it works offline.
+Four static pages over the same tested marts, in the shape of an analyst's console:
+a left rail of filters beside the numbers, dark by default, mono-forward. No
+framework, no build step, no charting library, and no request to any other host at
+runtime — the fonts are vendored, so it works offline.
+
+**Every page answers before it tabulates.** A sentence at the top states what the
+current view shows, a *What this means* block explains the metric in plain words, and
+a **How to read it** block teaches the picture: a labelled miniature of that page's
+own visual, then two or three worked examples naming rows that are on screen —
+*"Aston Villa: ring at 51.1, dot well to its right at 65 — the longest bar in the
+column."* They are selected by sorting the loaded rows, so they follow the filters.
+
+Rates carry their **league percentile** as a bar, because "0.78 npxG per 90" does not
+tell a reader whether that is good — and the percentile is computed in dbt against a
+stated population, not in the browser.
 
 Hosting is an open decision ([§13](CLAUDE.md)): publishing the site publishes its
 JSON, which is the data itself, and the source terms have not been settled. So these
@@ -105,10 +117,12 @@ are screenshots of the real thing, generated from the real pages.
 | **Players** — per-90 leaderboard with a minutes filter. Penalties stripped out. | **Shots** — every shot where it was taken, sized by xG, drawn as hand-written SVG in Understat's own coordinates. |
 | [![Players](docs/images/dashboard-players.png)](docs/images/dashboard-players.png) | [![Shots](docs/images/dashboard-shots.png)](docs/images/dashboard-shots.png) |
 
-**No metric is computed in the browser.** The frontend filters, sorts and formats;
-every figure it shows was defined in dbt and tested there. That rule is enforced by
-the export script rather than left to discipline — it refuses to read any table whose
-name does not begin with `mart_`.
+**No metric is computed in the browser** — including the explanations. The frontend
+filters, sorts and formats; every figure it shows, and every ranking or band it reads
+out, was defined in dbt and tested there. A percentile depends on which players are
+in the comparison, so it is a modelling decision, not a label. The rule is enforced
+by the export script rather than left to discipline: it refuses to read any table
+whose name does not begin with `mart_`.
 
 ---
 
@@ -235,12 +249,18 @@ uv run jupyter lab
 
 # --- the dashboard ------------------------------------------------------------
 uv run python scripts/export_site_data.py    # marts -> site/data/*.json
-uv run python -m http.server -d site         # then open http://localhost:8000
+uv run python scripts/serve_site.py          # then open http://127.0.0.1:8000
+uv run python scripts/check_site.py          # confirm it is serving site/, not a stale copy
 ```
 
-The dashboard pages fetch JSON, so opening the HTML files directly does not work.
-The browser smoke tests need Chromium once per machine
-(`uv run playwright install --with-deps chromium`) and skip themselves without it.
+The pages fetch JSON, so opening the HTML files directly does not work. Use
+`serve_site.py` rather than `python -m http.server`: the stock server sends no
+`Cache-Control`, so browsers reuse cached JavaScript and a reload can quietly run
+the previous build's scripts against the current markup.
+
+The browser smoke tests run in Chromium and Firefox, need them installed once per
+machine (`uv run playwright install --with-deps chromium firefox`), and skip
+themselves without.
 
 If Part 1's schema has changed, the export refuses to run and names every difference.
 Review what it affects, then `uv run python scripts/export_gold.py --write-contract`
@@ -255,6 +275,8 @@ and commit that on its own.
 ├── scripts/
 │   ├── export_gold.py            Part 1 PostgreSQL -> Parquet snapshot + manifest
 │   ├── export_site_data.py       marts -> site/data/*.json (marts only, enforced)
+│   ├── serve_site.py             local preview that never serves a stale script
+│   ├── check_site.py             compares a running server against site/ on disk
 │   └── export_readme_images.py   charts from the notebooks, screenshots from the site
 ├── dbt/
 │   ├── macros/                   season_label (Part 1's August cutoff), grain test

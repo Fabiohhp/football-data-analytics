@@ -14,7 +14,7 @@
 import {
   $, el, svg, num, segmented, syncSegmented, fillSelect, loadJSON, showError,
   showTip, hideTip, prettyDate, startPage, leaguesIn, seasonsIn, defaultSeason,
-  clubsIn,
+  clubsIn, setAnswer, highlight, setGuide, figureLabel, figureLeader, asPercent,
 } from "./common.js";
 
 const LEAGUE_NAMES = {
@@ -38,6 +38,12 @@ const SITUATIONS = [
   ["DirectFreekick", "Free kicks"],
   ["Penalty", "Penalties"],
 ];
+
+/** How each situation reads inside a sentence. */
+const SITUATION_WORDS = {
+  OpenPlay: "open play", FromCorner: "corners", SetPiece: "set pieces",
+  DirectFreekick: "direct free kicks", Penalty: "penalties",
+};
 
 const state = { league: "PL", season: null, teamKey: null, player: "all", situation: "all" };
 let TABLE = [];
@@ -79,6 +85,29 @@ function drawPitch() {
   return node;
 }
 
+/** A simplified goalmouth with three shots, labelled by what their size means. */
+function guideFigure() {
+  const node = svg("svg", {
+    viewBox: "0 0 150 68", role: "img",
+    "aria-label": "A labelled example of three shots on the shot map",
+  });
+
+  // The pitch sits left, so the labels have clear room on the right.
+  node.append(svg("rect", { class: "fig-rule", x: 12, y: 6, width: 60, height: 38, fill: "none" }));
+  node.append(svg("rect", { class: "fig-rule", x: 30, y: 6, width: 24, height: 10, fill: "none" }));
+  node.append(svg("circle", { cx: 42, cy: 24, r: 0.9, fill: "var(--pitch-line)" }));
+
+  // Close and large (a goal, so coloured), mid-range, and far and small.
+  node.append(svg("circle", { cx: 42, cy: 15, r: 6, fill: "var(--ahead)", "fill-opacity": .8 }));
+  node.append(svg("circle", { cx: 26, cy: 28, r: 3, fill: "var(--even)", "fill-opacity": .5 }));
+  node.append(svg("circle", { cx: 62, cy: 38, r: 1.8, fill: "var(--even)", "fill-opacity": .5 }));
+
+  node.append(figureLeader(48.5, 15, 76, 15), figureLabel(78, 17, "big + close"));
+  node.append(figureLeader(64, 38, 76, 40), figureLabel(78, 42, "small + far"));
+  node.append(figureLeader(42, 25, 42, 52), figureLabel(42, 58, "penalty spot", "middle"));
+  return node;
+}
+
 function render(shots) {
   const filtered = shots.filter((shot) =>
     shot.season === state.season &&
@@ -117,10 +146,92 @@ function render(shots) {
   // totals for a club live on the League table page, where a mart defines them.
   const goals = filtered.filter((shot) => shot.goal).length;
   const club = TABLE.find((row) => row.team_key === state.teamKey && row.season === state.season);
-  const who = state.player === "all" ? club?.team ?? "this club" : state.player;
+  const who = state.player === "all" ? (club?.team ?? "this club") : state.player;
+  const scope = state.situation === "all"
+    ? "" : ` from ${SITUATION_WORDS[state.situation] ?? state.situation}`;
+
   $("board-title").textContent = `${who} — ${state.season}`;
-  $("eyebrow").textContent =
-    `${club?.team ?? ""} · ${state.season} · ${LEAGUE_NAMES[state.league] ?? state.league}`;
+
+  const sentence = document.createDocumentFragment();
+  sentence.append(
+    `${who} took `,
+    highlight(`${filtered.length} shots`, "ahead"),
+    `${scope} in ${state.season}, and scored ${goals} of them.`,
+  );
+
+  // Three shots from the ones actually drawn: the best chance, a goal from a poor
+  // one, and the furthest effort. Picked by sorting; nothing here is derived.
+  const byXg = [...filtered].sort((a, b) => (b.xg ?? 0) - (a.xg ?? 0));
+  const best = byXg[0];
+  const luckiest = filtered
+    .filter((shot) => shot.goal && !shot.penalty && shot.result !== "OwnGoal")
+    .sort((a, b) => (a.xg ?? 0) - (b.xg ?? 0))[0];
+  // Own goals are drawn with the shots, but they are not attempts at this goal: they
+  // sit on the scorer's own team at exactly 0.00 xG (§5 trap 11), which puts them at
+  // the wrong end of the pitch and top of a sort by distance. Picking one as "the
+  // effort furthest from goal" would teach the reader something untrue.
+  const furthest = filtered
+    .filter((shot) => shot.result !== "OwnGoal")
+    .sort((a, b) => a.x - b.x)[0];
+
+  const guideExamples = [];
+  if (best) {
+    guideExamples.push({
+      subject: `${best.player}, ${best.minute}'`,
+      text: `the largest disc here, worth ${num(best.xg, 2)} [[xg|xG]] — a chance that ` +
+        `goes in about ${asPercent(best.xg)} times in a hundred. ` +
+        `${best.goal ? "It went in." : "It did not go in."}`,
+    });
+  }
+  if (luckiest) {
+    guideExamples.push({
+      subject: `${luckiest.player}, ${luckiest.minute}'`,
+      text: `a goal from only ${num(luckiest.xg, 2)} xG, about ${asPercent(luckiest.xg)} in ` +
+        "a hundred — a small coloured disc. These are " +
+        "the ones that inflate a finishing number, and the ones least likely to happen " +
+        "again next season.",
+    });
+  }
+  if (furthest) {
+    guideExamples.push({
+      subject: `${furthest.player}, ${furthest.minute}'`,
+      text: `the effort furthest from goal, worth ${num(furthest.xg, 2)} xG. A cloud with ` +
+        "many of these and few large discs is a side settling for whatever it can get.",
+    });
+  }
+  guideExamples.push({
+    subject: "Reading the cloud",
+    text: "size is chance quality, position is where it came from, colour is whether it " +
+      "went in. Lots of large discs near the six-yard box means a team working the ball " +
+      "into good positions; a scatter of small ones round the edge of the area does not.",
+  });
+
+  setGuide({
+    figure: guideFigure(),
+    caption: "Marker area is the shot's [[xg|xG]]; goals are coloured. Every penalty " +
+      "lands on the same spot, which is how the axes are checked.",
+    examples: guideExamples,
+  });
+
+  setAnswer({
+    kicker: `${club?.team ?? ""} · ${state.season} · ${LEAGUE_NAMES[state.league] ?? state.league}`,
+    sentence,
+    meaning: [
+      "Each circle is one shot, placed where it was taken, and sized by its " +
+      "[[xg|expected goals]] — so a tap-in is a large disc and a hopeful effort from " +
+      "distance is a small one. Goals are picked out in colour. The goal being attacked " +
+      "is at the top.",
+      "The shape of the cloud is the point. A club whose discs are large and central is " +
+      "working the ball into good positions; one whose shots are small and spread around " +
+      "the edge of the box is taking whatever it can get, and will score less for the " +
+      "same number of attempts.",
+    ],
+    caveat:
+      "Counts here describe what is drawn, not a season total: change the situation filter " +
+      "and the number changes with it. Own goals appear because Understat records them as a " +
+      "shot result on the scorer's own team — they are never counted as goals for this club.",
+  });
+
   $("board-foot").replaceChildren(
     `${filtered.length} shots shown, ${goals} of them goals · from `,
     el("code", "", "mart_shots"),

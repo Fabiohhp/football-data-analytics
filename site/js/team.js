@@ -7,12 +7,19 @@
 import {
   $, el, svg, num, signed, segmented, syncSegmented, fillSelect, loadJSON,
   showError, showTip, hideTip, scale, ticks, prettyDate, startPage, leaguesIn,
-  seasonsIn, defaultSeason, clubsIn,
+  seasonsIn, defaultSeason, clubsIn, setAnswer, highlight, setGuide,
+  figureLabel, figureLeader,
 } from "./common.js";
 
 const LEAGUE_NAMES = {
   PL: "Premier League", PD: "LaLiga", BL1: "Bundesliga", SA: "Serie A", FL1: "Ligue 1",
 };
+
+function ordinal(n) {
+  const suffix = ["th", "st", "nd", "rd"];
+  const value = n % 100;
+  return n + (suffix[(value - 20) % 10] || suffix[value] || suffix[0]);
+}
 
 const state = { league: "PL", season: null, teamKey: null };
 let TABLE = [];
@@ -94,11 +101,31 @@ function drawChart(matches) {
   $("chart").replaceChildren(node);
 }
 
-function tile(label, value, sub) {
-  const node = el("div", "tile");
-  const main = el("div", "tile-main");
-  main.append(el("div", "tile-value", value));
-  node.append(el("div", "tile-label", label), main, el("div", "tile-sub", sub));
+/** Two short lines and five result dots, labelled — the chart in miniature. */
+function guideFigure() {
+  // `chart-svg` on purpose: the miniature then picks up exactly the styles the real
+  // chart uses, so the legend is the thing itself. Without it the series rules —
+  // which are scoped to `.chart-svg` — do not apply, and the lines render as filled
+  // black shapes instead of strokes.
+  const node = svg("svg", {
+    class: "chart-svg", viewBox: "0 0 150 76", role: "img",
+    "aria-label": "A labelled example of the rolling xG chart",
+  });
+
+  node.append(svg("path", {
+    class: "series series-for", d: "M14,46 L42,32 L70,27 L98,40 L126,24",
+  }));
+  node.append(svg("path", {
+    class: "series series-against", d: "M14,31 L42,39 L70,45 L98,29 L126,43",
+  }));
+
+  for (const [x, cls] of [[14, "loss"], [42, "win"], [70, "win"], [98, "draw"], [126, "win"]]) {
+    node.append(svg("circle", { class: `result-dot ${cls}`, cx: x, cy: 62, r: 2.6 }));
+  }
+
+  node.append(figureLeader(70, 25, 70, 15), figureLabel(70, 12, "xG created", "middle"));
+  node.append(figureLeader(70, 47, 100, 53), figureLabel(102, 55, "xG conceded"));
+  node.append(figureLeader(14, 64, 10, 71), figureLabel(8, 74, "result"));
   return node;
 }
 
@@ -112,15 +139,36 @@ async function render() {
   const all = await formFor(state.teamKey);
   const matches = all.filter((row) => row.season === state.season);
 
-  $("eyebrow").textContent = `${club.team} · ${state.season} · ${LEAGUE_NAMES[club.league] ?? club.league}`;
   $("board-title").textContent = `${club.team} — rolling xG over ${META.form_window} matches`;
 
-  // Season figures straight from the league table row. Nothing is recomputed here.
-  $("tiles").replaceChildren(
-    tile("League position", String(club.position), `${club.points} points from ${club.played} matches`),
-    tile("xPTS", num(club.xpts, 1), `${signed(club.points_minus_xpts)} against points`),
-    tile("xG difference", signed(club.xgd), `${num(club.xg_for, 1)} created, ${num(club.xg_against, 1)} conceded`),
+  // Every figure below is a column of the league-table row for this club-season.
+  const gapDir = club.points_minus_xpts >= 0 ? "ahead" : "behind";
+  const sentence = document.createDocumentFragment();
+  sentence.append(
+    `${club.team} finished ${ordinal(club.position)} on ${club.points} points, `,
+    highlight(`${signed(club.points_minus_xpts)}`, gapDir),
+    ` against their expected points, with an xG difference of ${signed(club.xgd)} — `,
+    `${ordinal(club.xg_difference_rank)} best of ${club.clubs_in_league}.`,
   );
+
+  setAnswer({
+    kicker: `${club.team} · ${state.season} · ${LEAGUE_NAMES[club.league] ?? club.league}`,
+    sentence,
+    meaning: [
+      `The chart below is the same season seen week by week: [[xg|expected goals]] created ` +
+      `and conceded, averaged over a rolling window of ${META.form_window} matches so one ` +
+      "wild afternoon does not swing the line. The dots underneath are what the club " +
+      "actually got — win, draw or loss — for the way it was playing.",
+      "Where the blue line sits above the red, the club was creating more than it was " +
+      "giving up. Where the dots disagree with the lines for a stretch, that is the gap " +
+      "between performance and result that the league table's [[gap|Points − xPTS]] column " +
+      "adds up.",
+    ],
+    caveat:
+      `A window of ${META.form_window} matches is short: the first few points of a season ` +
+      "rest on fewer, and a fixture the two sources never paired has no xG at all and is " +
+      "left out rather than counted as zero. The footer says when that has happened.",
+  });
 
   if (!matches.length) {
     $("chart").replaceChildren(el("div", "state", "No matches for this club in this season."));
@@ -129,6 +177,54 @@ async function render() {
   }
 
   drawChart(matches);
+
+  // Three stretches of this club's own season, found by sorting the matches already
+  // drawn: its best spell for creating, its worst for conceding, and a match where
+  // the result and the performance disagreed.
+  const windowed = matches.filter((m) => m.rolling_xg_for !== null);
+  const bestSpell = [...windowed].sort((a, b) => b.rolling_xg_for - a.rolling_xg_for)[0];
+  const leakiest = [...windowed].sort((a, b) => b.rolling_xg_against - a.rolling_xg_against)[0];
+  const robbed = matches
+    .filter((m) => m.points === 0 && m.xg_for !== null && m.xg_for > m.xg_against)
+    .sort((a, b) => b.xg_for - a.xg_for)[0];
+
+  const examples = [];
+  if (bestSpell) {
+    examples.push({
+      subject: `Match ${bestSpell.match_number}`,
+      text: `the blue line peaks at ${num(bestSpell.rolling_xg_for, 2)}. Over the ` +
+        `${META.form_window} matches ending there, ${club.team} created more than in any ` +
+        "other stretch of the season.",
+    });
+  }
+  if (leakiest) {
+    examples.push({
+      subject: `Match ${leakiest.match_number}`,
+      text: `the red line peaks at ${num(leakiest.rolling_xg_against, 2)} — red above blue, ` +
+        "so the opposition were getting the better chances. A run to worry about however " +
+        "the results looked at the time.",
+    });
+  }
+  if (robbed) {
+    examples.push({
+      subject: `${robbed.home ? "vs" : "at"} ${robbed.opponent}`,
+      text: `lost ${robbed.gf}\u2013${robbed.ga} after creating ${num(robbed.xg_for, 2)} xG ` +
+        `against ${num(robbed.xg_against, 2)}. A red dot sitting under a high blue line is ` +
+        "what deserving more than you got looks like.",
+    });
+  }
+  examples.push({
+    subject: "The shape to look for",
+    text: "where the lines cross, something about the team changed. Where the dots stop " +
+      "agreeing with the lines, their luck did.",
+  });
+
+  setGuide({
+    figure: guideFigure(),
+    caption: `Blue is [[xg|xG]] created, red is xG conceded, each averaged over the last ` +
+      `${META.form_window} matches. The dots underneath are the results.`,
+    examples,
+  });
 
   const missing = matches.filter((m) => m.xg_for === null).length;
   $("board-foot").replaceChildren(
@@ -173,7 +269,6 @@ const { meta, leagueTable } = await startPage({
 });
 META = meta;
 TABLE = leagueTable;
-$("window-size").textContent = String(META.form_window);
 
 const leagues = leaguesIn(TABLE);
 if (!leagues.includes(state.league)) state.league = leagues[0];

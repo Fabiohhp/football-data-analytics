@@ -19,11 +19,15 @@ This project is **Part 2 — Analytics & BI** of a football (soccer) data
 portfolio. It turns the Gold star schema built by Part 1 into **answered
 questions** (written analyses) and an **interactive dashboard**.
 
-It is its own repository, sitting next to the pipeline that feeds it:
+It is its own repository, sitting next to the pipeline that feeds it. **Only the
+sibling relationship matters** — every path in the code is relative (`snapshot.py`
+and `marts.py` resolve from `__file__`, the export reads `../football-data-engineering`),
+so the pair can live anywhere as long as they stay side by side:
 
 ```
-~/football-data-engineering/   Part 1 — the pipeline; owns the Gold layer
-~/football-data-analytics/     Part 2 — this repository
+portfolio/football-data/
+├── football-data-engineering/   Part 1 — the pipeline; owns the Gold layer
+└── football-data-analytics/     Part 2 — this repository
 ```
 
 | Phase | Scope | Where | Status |
@@ -177,7 +181,8 @@ schema" section of that repository's README. Scope is the **big-5 leagues only**
 | `dim_referees` | one official (SCD1) | name, nationality |
 | `dim_stadiums` | one ground (SCD1) | name, country, raw address; `city` and `capacity` are always null |
 
-**Traps. Each of these produces a plausible-looking wrong number, not an error.**
+**Traps. Each of these produces a plausible-looking wrong number, not an error** —
+except the last, which produces a visibly wrong *name*.
 
 1. **Aggregate players by `understat_player_id`, never by `player_key`.**
    `dim_players` is SCD Type 2: a player who changed clubs has several keys, and
@@ -268,6 +273,22 @@ schema" section of that repository's README. Scope is the **big-5 leagues only**
     shot of those matches twice under different shot ids, so shot counts and
     summed xG double there. Deduplicate on
     `(match_key, player_key, minute, result, x, y, xg)` if shot volume matters.
+15. **Names arrive HTML-escaped.** Understat serves them that way and Part 1 stores
+    them as received, so Gold really holds `Nico O&#039;Reilly`. Measured: 22
+    `dim_players` versions, 16 distinct players, 399 event rows; the only entity in
+    the current snapshot is `&#039;`. It is invisible in a terminal that renders the
+    entity and glaring in a browser that does not, which is how it was found — on the
+    dashboard's player dropdown, not in any test.
+
+    `dbt/macros/html_unescape.sql` decodes it in staging, and
+    `assert_no_html_entities_in_names` fails if an entity this repository has not seen
+    starts arriving. `&amp;` is decoded **last**, so a double-escaped `&amp;#039;`
+    cannot be unwound into a character that was never in the name. Legitimate
+    ampersands are untouched: `Brighton & Hove Albion` is stored unescaped.
+
+    **This belongs in Part 1, at ingestion** — it repairs a value rather than renaming
+    or casting one, and every consumer of Gold otherwise has to repair it
+    independently. Raise it there; the macro is a stopgap, not the fix.
 
 ---
 
@@ -431,16 +452,84 @@ Rules:
 - **Works at phone width.**
 - **`site/data/` is generated and gitignored**, like `data/`, until §13 decides
   what may be published.
-- **Preview through a local server** — the pages fetch JSON, so opening the
-  HTML file directly does not work (see §11).
+- **Preview with `scripts/serve_site.py`, not `python -m http.server`.** The pages
+  fetch JSON, so opening the HTML directly does not work — but the stock server also
+  sends no `Cache-Control`, and browsers then reuse cached JavaScript without
+  revalidating. That serves the previous build's scripts against the current markup,
+  which fails wherever the two disagree; it cost a debugging session whose symptom
+  was an empty dashboard and a null `textContent`. The preview server sends
+  `no-store`. A real host should cache, and the answer there is a fingerprinted
+  filename — not a concern until §13 decides on hosting.
+- **When the dashboard misbehaves, check what is being served before reading the
+  code.** `scripts/check_site.py` fetches every page, script and stylesheet from a
+  running server, hashes it against the file on disk, and names any that differ. Two
+  rounds of a bug were spent in the source when the browser was simply executing a
+  different build — an old server still bound to the port, or a cached response. It
+  is one command and it rules that out first.
 - **CI smoke-tests the site:** it runs the export on the fixture and loads every
-  page in a headless browser (pytest-playwright, so no Node), failing on any
-  console error.
+  page in **Chromium and Firefox** (pytest-playwright, so no Node), failing on any
+  console error. Two engines because a static site has no other test worth the name,
+  and because the one reader-reported breakage arrived from the engine the suite was
+  not running.
 - **Part 3 shows predictions the same way** — as pre-computed JSON the site
   reads, never a model running live.
 
 Settled while building it:
 
+- **A left rail, not a top bar.** The filters live beside the numbers rather than in
+  a band above them, so they stay on screen while the figures change — the pattern
+  Linear, Stripe and Grafana use. This was the second attempt: the first redesign
+  kept the old skeleton (hero → controls → tiles → table) and only changed the
+  colours, which is why it read as the same page in a different palette.
+- **Every page answers before it tabulates.** The canvas is an inverted pyramid: a
+  kicker, then **a sentence stating what the current view shows**, then a *What this
+  means* block, then the evidence. A reader who stops after the first screen should
+  leave with a finding rather than a table to interpret. `assert` this: the smoke
+  test fails a page with no filled-in answer line, no highlighted figure, or no
+  defined terms.
+- **The explanation is a metric, so it lives in dbt.** "Is 0.78 npxG per 90 good?"
+  is answered by a percentile, and a percentile depends entirely on which players
+  are in the comparison — a modelling decision, not formatting. `mart_player_season`
+  computes it against *the same season and league, players over the minutes floor*;
+  `mart_team_season` carries `points_minus_xpts_rank` and a `gap_band`. The pages
+  insert those values and compute nothing.
+- **A band is not a significance test.** `gap_band` says "well ahead" so a reader who
+  does not know what 13.9 means is told it is unusual — and the caveat beside it says
+  the analysis found a gap of any size barely persists. The reading aid and the
+  finding that undercuts it appear together, on purpose.
+- **A page must degrade, not blank.** Every `getElementById` write is guarded, and
+  `startPage()` checks the skeleton the scripts assume and renders a red banner
+  naming any missing element. The failure this replaces was a reader's screenshot of
+  an empty dashboard and `can't access property "textContent" ... is null`: one
+  unguarded write threw halfway through `render()` and took the table, the footer and
+  everything after it with it. A page that is missing one element should lose that
+  element and say so.
+- **Show, then explain.** Each page carries a *How to read it* block: a labelled
+  miniature of that page's own visual, plus two or three worked examples naming rows
+  that are on screen right now. Definitions alone do not teach someone to read a
+  dot-and-ring plot — being walked through one club's row does. The miniatures reuse
+  the real visuals' CSS classes on purpose, so the legend is the thing itself; the
+  team figure rendered as filled black shapes until it was given `chart-svg`, which
+  is the failure mode that choice invites and the reason it is worth stating.
+- **Worked examples are selected, never composed.** They come from sorting the rows
+  already loaded — the widest gap, the best five-match spell, the biggest chance — so
+  they follow the filters instead of going stale. Two things that bit: a sort by
+  distance put an **own goal** top of "the effort furthest from goal" (they sit at the
+  scorer's own end at 0.00 xG, §5 trap 11), and writing `+13.9 points more` double-signs
+  the number. Prose takes the magnitude; the word carries the direction.
+- **Terms explain themselves where they appear.** One `GLOSSARY` in `common.js`,
+  marked up as `[[xpts]]` inside the explanation text, rendered as a focusable
+  button with the definition on hover. A page of definitions nobody opens is not an
+  explanation.
+- **Dark is the default, not a variant.** The design is an analyst's console —
+  mono-forward, dense, hairline panels rather than rounded cards, and two semantic
+  hues and no more: blue is ahead / created, red is behind / conceded, the same on
+  every page and in the notebook charts. Neither is spent on interface state, so a
+  selected control inverts the ink instead.
+- **The theme toggle writes only an explicit choice.** `data-theme="light"` is the
+  override; an inline script in each page's `<head>` applies a stored choice before
+  first paint so the page never flashes the wrong theme, and every `localStorage`
+  read and write is wrapped because it throws in a private window.
 - **No charting library at all.** §9 allowed one; none was needed. The league
   table's dot plot is positioned `<span>`s, the rolling-xG chart and the shot map
   are hand-written inline SVG, and `common.js` carries the only two pieces of chart
@@ -475,6 +564,8 @@ football-data-analytics/
 ├── scripts/
 │   ├── export_gold.py         # Part 1 PostgreSQL -> data/gold/*.parquet + manifest.json
 │   ├── export_site_data.py    # marts -> site/data/*.json (select and format only)
+│   ├── serve_site.py          # local preview; sends no-store so reloads are honest
+│   ├── check_site.py          # is the running server serving site/? hashes vs disk
 │   └── export_readme_images.py  # notebook figures + dashboard screenshots -> docs/images/
 ├── docs/images/               # committed: what the README shows (the site is not hosted)
 ├── dbt/
@@ -562,11 +653,15 @@ uv run dbt docs generate --project-dir dbt --profiles-dir dbt   # lineage + grai
 
 # --- the dashboard: needs the marts built first ------------------------------
 uv run python scripts/export_site_data.py    # marts -> site/data/*.json
-uv run python -m http.server -d site         # then open http://localhost:8000
+uv run python scripts/serve_site.py          # then open http://127.0.0.1:8000
+uv run python scripts/check_site.py          # is the server serving site/? (see below)
 # The pages fetch JSON, so opening the HTML files directly does not work.
+# **Do not preview with `python -m http.server`.** It sends no Cache-Control, so a
+# browser caches the JS heuristically and reloads serve the previous build's
+# scripts against the current HTML. serve_site.py sends no-store for that reason.
 
-# The browser smoke tests skip unless Chromium is installed. Once, per machine:
-uv run playwright install --with-deps chromium   # --with-deps needs root
+# The browser smoke tests run in Chromium *and* Firefox. Once, per machine:
+uv run playwright install --with-deps chromium firefox   # --with-deps needs root
 uv run pytest tests/test_site.py -q
 uv run pytest -q -m "not site"                   # skip them outright
 ```
@@ -665,7 +760,7 @@ Two notebook-reproducibility lessons worth keeping: bootstrap helpers take a
 re-run produce a different notebook file.
 
 **What phase 4 established.** `scripts/export_site_data.py` and a four-page static
-dashboard in `site/`, with 18 browser smoke tests. No npm, no framework, no build
+dashboard in `site/`, with browser smoke tests in two engines. No npm, no framework, no build
 step, no charting library, and no request to any other host at runtime.
 
 The export enforces its own rule rather than relying on discipline: `rows()` refuses
@@ -683,8 +778,27 @@ Three things the browser found that nothing else would have:
 - both were invisible to ruff, to pytest and to every dbt test.
 
 That is the argument for the smoke test being a real browser rather than an HTML
-parser. It skips itself when Chromium cannot start, so `uv run pytest -q` still
+parser. It skips itself when a browser cannot start, so `uv run pytest -q` still
 works on a fresh clone.
+
+**A later episode added the fourth lesson, and it was a process one.** A reader
+opened the dashboard and got an empty page and
+`can't access property "textContent" ... is null`. Reproduced exactly by serving the
+current HTML with a *mismatched* build's JavaScript: the two disagreed about which
+elements exist. `python -m http.server` — the preview command this file used to
+document — sends `Last-Modified` and no `Cache-Control`, so browsers cache
+heuristically and do not revalidate, which is one way to get that mismatch.
+
+Three changes, in increasing order of importance:
+
+1. `scripts/serve_site.py` sends `no-store`, so the documented preview workflow
+   cannot serve a stale file.
+2. The smoke tests run in Chromium **and** Firefox — the report arrived from the
+   engine the suite was not running.
+3. **The page no longer depends on being right.** Writes are guarded and a missing
+   element produces a named banner instead of a blank screen. The first two reduce
+   the chance of a mismatch; only the third makes one survivable, and it is the fix
+   that would have turned a debugging session into a glance.
 
 **What phase 5 established.** The README is now the portfolio front page: findings
 first, then the dashboard, then how it is built and why it can be trusted, then how to

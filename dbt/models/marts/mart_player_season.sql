@@ -134,6 +134,33 @@ select
     90.0 * s.shots    / nullif(s.minutes, 0) as shots_per_90,
     90.0 * (s.np_goals - s.npxg) / nullif(s.minutes, 0) as np_goals_minus_npxg_per_90,
 
+    -- --- reading aids -------------------------------------------------------
+    -- "Is 0.80 npxG per 90 good?" is the question a rate invites and cannot answer
+    -- on its own. A percentile answers it, and it is a metric, not formatting: it
+    -- depends entirely on which players are in the comparison. The population is
+    -- **the same season and the same league, among players who clear the minutes
+    -- floor** — comparing a Bundesliga forward against every squad player in Europe
+    -- would flatter him, and comparing across seasons would move the yardstick.
+    --
+    -- Players below the floor get NULL rather than a percentile against a population
+    -- they are not part of. 0 = lowest, 100 = highest.
+    {% set rate_columns = [
+        ("npxg_per_90", "npxg_per_90"),
+        ("np_goals_per_90", "np_goals_per_90"),
+        ("xa_per_90", "xa_per_90"),
+        ("shots_per_90", "shots_per_90"),
+    ] %}
+    {% for name, expression in rate_columns %}
+    case when s.minutes >= {{ var('min_minutes') }} then round(100 * percent_rank() over (
+        partition by s.season, cs.competition_code,
+                     (s.minutes >= {{ var('min_minutes') }})
+        order by 90.0 * s.{{ 'npxg' if name == 'npxg_per_90'
+                             else 'np_goals' if name == 'np_goals_per_90'
+                             else 'xa' if name == 'xa_per_90'
+                             else 'shots' }} / nullif(s.minutes, 0)
+    )) end as {{ name }}_percentile,
+    {% endfor %}
+
     -- The minutes floor is a dbt var (`min_minutes`, default 900 — ten full
     -- matches), carried as a column so a chart can filter on it and state it
     -- without hardcoding the number a second time (CLAUDE.md §6).

@@ -88,6 +88,29 @@ models:
         description: |
           Mean passes allowed per defensive action over `matches_with_ppda` matches.
           **Lower means more pressing** (§5 trap 12).
+      - name: points_minus_xpts_rank
+        description: |
+          1 = furthest ahead of xPTS in this league-season. A rank is a metric, not
+          formatting — it depends on which rows are in the population — so it is
+          defined here rather than by sorting in the browser.
+        tests: [not_null]
+      - name: xg_difference_rank
+        description: 1 = best xG difference in this league-season.
+        tests: [not_null]
+      - name: clubs_in_league
+        description: The size of the population both ranks are against, so "4th" can be shown as "4th of 20".
+        tests: [not_null]
+      - name: gap_band
+        description: |
+          A plain-language reading of `points_minus_xpts`, from the `gap_level_points`
+          (3) and `gap_wide_points` (8) vars. **Presentational, not a significance
+          test:** analysis 02 found a gap of any size barely persists into the next
+          half-season, and the dashboard says so beside the band. It exists so a
+          reader who does not know what 13.9 means is told it is unusually wide.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["well ahead", "ahead", "level", "behind", "well behind"]
       - name: scheduled_per_team
         description: "`2 × (clubs in this league-season − 1)`: a full double round robin. Derived from the clubs present, never a hardcoded 38 or 34."
         tests: [not_null]
@@ -227,6 +250,21 @@ models:
           the finding, not a flaw.
       - name: npxg_per_90
         description: Non-penalty expected goals per 90 — chance *volume*, the thing finishing is usually contrasted with.
+      - name: npxg_per_90_percentile
+        description: |
+          Where this player's npxG per 90 sits **among players in the same season and
+          the same league who clear the minutes floor** — 0 lowest, 100 highest.
+
+          The population is the whole point. Comparing a Bundesliga forward against
+          every squad player in Europe would flatter him, and comparing across seasons
+          would move the yardstick. Null below the floor, rather than a percentile
+          against a population the player is not part of.
+      - name: np_goals_per_90_percentile
+        description: As `npxg_per_90_percentile`, for non-penalty goals per 90.
+      - name: xa_per_90_percentile
+        description: As `npxg_per_90_percentile`, for expected assists per 90.
+      - name: shots_per_90_percentile
+        description: As `npxg_per_90_percentile`, for shots per 90.
       - name: min_minutes
         description: The `min_minutes` dbt var in force when this was built, carried so a chart can state its threshold without hardcoding it again.
         tests: [not_null]

@@ -115,6 +115,33 @@ select
     matches_with_ppda,
     ppda,
 
+    -- --- reading aids -------------------------------------------------------
+    -- Where this club sits among its own league-season on the two quantities a
+    -- reader is most likely to ask "is that a lot?" about. Rank is computed here
+    -- rather than in the dashboard because it is a metric: it depends on which rows
+    -- are in the population, and that decision belongs in one tested place.
+    rank() over (
+        partition by s.season, s.competition_code
+        order by points_in_xpts_matches - xpts desc nulls last
+    ) as points_minus_xpts_rank,
+    rank() over (
+        partition by s.season, s.competition_code
+        order by (xg_for - xg_against) desc nulls last
+    ) as xg_difference_rank,
+    count(*) over (partition by s.season, s.competition_code) as clubs_in_league,
+
+    -- A plain-language band for the gap, from the `gap_level_points` and
+    -- `gap_wide_points` vars. Presentational only — analysis 02 found a gap of any
+    -- size barely carries into the next half-season, and the page says so next to it.
+    case
+        when points_in_xpts_matches - xpts is null then null
+        when points_in_xpts_matches - xpts >= {{ var('gap_wide_points') }} then 'well ahead'
+        when points_in_xpts_matches - xpts >= {{ var('gap_level_points') }} then 'ahead'
+        when points_in_xpts_matches - xpts <= -{{ var('gap_wide_points') }} then 'well behind'
+        when points_in_xpts_matches - xpts <= -{{ var('gap_level_points') }} then 'behind'
+        else 'level'
+    end as gap_band,
+
     scheduled_per_team,
     played = scheduled_per_team as team_fixtures_complete,
     -- True only when *every* club in the league-season has played its full

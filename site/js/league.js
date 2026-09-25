@@ -7,6 +7,7 @@
 import {
   $, el, signed, num, direction, segmented, syncSegmented, fillSelect,
   showTip, hideTip, scale, ticks, startPage, leaguesIn, seasonsIn, defaultSeason,
+  setAnswer, highlight, setGuide, svg, figureLabel, figureLeader,
 } from "./common.js";
 
 const LEAGUE_NAMES = {
@@ -25,21 +26,28 @@ function rowsFor(league, season) {
   return TABLE.filter((row) => row.league === league && row.season === season);
 }
 
-function ordinal(n) {
-  const suffix = ["th", "st", "nd", "rd"];
-  const value = n % 100;
-  return n + (suffix[(value - 20) % 10] || suffix[value] || suffix[0]);
-}
+/**
+ * One row of the plot, blown up and labelled.
+ *
+ * The same three marks the table uses — ring, dot, connector — so the legend is the
+ * thing itself rather than a description of it.
+ */
+function guideFigure() {
+  const node = svg("svg", { viewBox: "0 0 150 62", role: "img",
+    "aria-label": "A labelled example of one club's row" });
 
-/** A summary tile. Each one picks a single row — no aggregation. */
-function tile(label, team, value, dir, sub) {
-  const node = el("div", "tile");
-  const main = el("div", "tile-main");
-  const shown = el("div", "tile-value");
-  if (dir) shown.append(el("i", `tri ${dir}`));
-  shown.append(value);
-  main.append(el("div", "tile-team", team), shown);
-  node.append(el("div", "tile-label", label), main, el("div", "tile-sub", sub));
+  node.append(svg("line", { class: "fig-rule", x1: 10, y1: 40, x2: 140, y2: 40 }));
+
+  // ring = xPTS, dot = points, bar between = the gap
+  node.append(svg("line", { x1: 48, y1: 40, x2: 104, y2: 40,
+    stroke: "var(--ahead)", "stroke-width": 1.6 }));
+  node.append(svg("circle", { cx: 48, cy: 40, r: 3.4, fill: "none",
+    stroke: "var(--muted)", "stroke-width": 1.4 }));
+  node.append(svg("circle", { cx: 104, cy: 40, r: 3.4, fill: "var(--ahead)" }));
+
+  node.append(figureLeader(48, 34, 40, 20), figureLabel(38, 17, "xPTS", "end"));
+  node.append(figureLeader(104, 34, 116, 20), figureLabel(118, 17, "points"));
+  node.append(figureLeader(76, 44, 76, 54), figureLabel(76, 60, "the gap", "middle"));
   return node;
 }
 
@@ -60,22 +68,86 @@ function render() {
   syncSegmented($("sort"), state.sort);
 
   const complete = rows[0].season_complete;
-  $("eyebrow").textContent = `${state.league} · ${state.season} · League table`;
   $("board-title").textContent = `${LEAGUE_NAMES[state.league] ?? state.league} ${state.season}`;
 
-  // Tiles: three single rows, selected by sorting.
-  const byGap = [...rows].sort((a, b) => b.points_minus_xpts - a.points_minus_xpts);
-  const ahead = byGap[0];
-  const behind = byGap[byGap.length - 1];
-  const topXpts = [...rows].sort((a, b) => b.xpts - a.xpts)[0];
-  $("tiles").replaceChildren(
-    tile("Furthest ahead of xPTS", ahead.team, signed(ahead.points_minus_xpts), "ahead",
-      `${ahead.points} pts from ${num(ahead.xpts, 1)} xPTS`),
-    tile("Furthest behind xPTS", behind.team, signed(behind.points_minus_xpts), "behind",
-      `${behind.points} pts from ${num(behind.xpts, 1)} xPTS`),
-    tile("Top of the xPTS table", topXpts.team, num(topXpts.xpts, 1), null,
-      topXpts.position === 1 ? "Also first on points" : `${ordinal(topXpts.position)} on points`),
-  );
+  // The answer, before the table. Rows are selected by their mart-computed rank;
+  // the sentence inserts values a tested model produced and computes nothing.
+  const ahead = rows.find((row) => row.points_minus_xpts_rank === 1);
+  const behind = [...rows].sort((a, b) => a.points_minus_xpts - b.points_minus_xpts)[0];
+  const league = LEAGUE_NAMES[state.league] ?? state.league;
+
+  // "took +13.9 points more" double-signs it, so prose uses the bare magnitude and
+  // the word carries the direction. The rank-1 club's gap can in principle still be
+  // negative — a league where nobody beat their xPTS — so that reads differently.
+  const sentence = document.createDocumentFragment();
+  if (ahead.points_minus_xpts > 0) {
+    sentence.append(
+      `${ahead.team} took `,
+      highlight(`${num(Math.abs(ahead.points_minus_xpts), 1)} points`, "ahead"),
+      ` more than their chances were worth — the widest gap of ${ahead.clubs_in_league} `,
+      `clubs in the ${league}, ${state.season}.`,
+    );
+  } else {
+    sentence.append(
+      `No club in the ${league} beat its expected points in ${state.season}. `,
+      `${ahead.team} came closest, at `,
+      highlight(signed(ahead.points_minus_xpts), "behind"),
+      ".",
+    );
+  }
+
+  setAnswer({
+    kicker: `${state.league} · ${state.season} · ${complete ? "complete season" : "season in progress"}`,
+    sentence,
+    meaning: [
+      "[[xpts|xPTS]] is what Understat's model expected each club to take from the chances " +
+      "in each match, added up over the season. [[gap|Points − xPTS]] is therefore the " +
+      "difference between what a club collected and what the balance of play was worth.",
+      `${ahead.team} finished **${ahead.gap_band}** of that mark and ${behind.team} ` +
+      `**${behind.gap_band}**, at ${signed(behind.points_minus_xpts)}. ` +
+      "Read down the right-hand column: a filled dot to the right of its ring is a club " +
+      "taking more than it deserved, to the left is one taking less.",
+    ],
+    caveat:
+      "A gap this size is not evidence of a knack for winning tight games. Across 192 " +
+      "club-seasons, how far a club ran ahead of its xPTS before Christmas explained almost " +
+      "none of how far it ran ahead afterwards — and the clubs furthest ahead gave up around " +
+      "five points of it. Treat the column as a description of the season, not a forecast.",
+  });
+
+  // Three real rows, walked through: one well ahead, one level, one behind. Chosen
+  // by sorting the rows already on screen — no figure here is derived.
+  const level = [...rows]
+    .filter((row) => row.gap_band === "level")
+    .sort((a, b) => Math.abs(a.points_minus_xpts) - Math.abs(b.points_minus_xpts))[0];
+
+  const examples = [
+    { subject: ahead.team,
+      text: `ring at ${num(ahead.xpts, 1)}, dot well to its right at ${ahead.points}. ` +
+            `They collected ${num(Math.abs(ahead.points_minus_xpts), 1)} points more than ` +
+            "the balance of play was worth — the longest bar in the column." },
+  ];
+  if (level) {
+    examples.push({ subject: level.team,
+      text: `dot almost on top of its ring — ${level.points} points against ` +
+            `${num(level.xpts, 1)} expected. What they got is roughly what they deserved, ` +
+            "which is where most clubs sit." });
+  }
+  examples.push({ subject: behind.team,
+    text: `dot to the **left** of the ring, and coloured red: ${behind.points} points from ` +
+          `${num(behind.xpts, 1)} expected. On the balance of play they should be ` +
+          `${num(Math.abs(behind.points_minus_xpts), 1)} points better off.` });
+  examples.push({ subject: "Reading down the column",
+    text: "bar length is how far result and performance came apart; which side the dot " +
+          "falls on is the direction. A short bar means the table is telling the truth " +
+          "about that club." });
+
+  setGuide({
+    figure: guideFigure(),
+    caption: "The ring is [[xpts|xPTS]]. The dot is the points actually taken. " +
+             "The bar between them is the gap.",
+    examples,
+  });
 
   // One scale for every row, so the dots are comparable down the column.
   const values = rows.flatMap((row) => [row.points, row.xpts]);
@@ -145,9 +217,8 @@ function render() {
     return tr;
   }));
 
-  const note = complete ? "complete season" : "season in progress";
   $("board-foot").replaceChildren(
-    `${rows.length} clubs · ${note} · xPTS is Understat's expected points per match, summed in `,
+    `${rows.length} clubs · ${complete ? "complete season" : "season in progress"} · from `,
     el("code", "", "mart_team_season"),
   );
 }

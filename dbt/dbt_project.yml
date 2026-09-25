@@ -28,6 +28,14 @@ vars:
   # saying how long it is.
   form_window: 5
 
+  # Bands for reading points − xPTS in a full season, in mart_team_season. These are
+  # **presentational**, not significance tests: analysis 02 found that a gap of any
+  # size barely persists into the next half-season, and the dashboard says so beside
+  # the band. They exist so a reader who does not know what 13.9 means is told it is
+  # unusually wide, rather than left to guess.
+  gap_level_points: 3
+  gap_wide_points: 8
+
 models:
   football_analytics:
     # Tables, not views, everywhere. A view over the snapshot would store

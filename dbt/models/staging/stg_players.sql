@@ -14,7 +14,8 @@
 select
     player_key,
     understat_player_id,
-    player_name,
+    -- Understat HTML-escapes names; Gold stores them as received (§5 trap 15).
+    {{ html_unescape('player_name') }} as player_name,
     position,
     current_team_key,
     valid_from,

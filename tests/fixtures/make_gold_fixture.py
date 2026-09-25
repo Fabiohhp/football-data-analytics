@@ -45,6 +45,9 @@ rather than in production:
 * every value of ``result``, ``situation`` and ``shot_type`` the real snapshot
   holds (trap 11), including the plural ``MissedShots`` and an ``OwnGoal`` — which
   is a *shot result*, sitting on the team of the player who scored it;
+* a player whose name arrives **HTML-escaped** exactly as Understat serves it and
+  Gold stores it, next to a club whose name contains a **real** ampersand — the fix
+  has to decode the first and leave the second alone (trap 15);
 * two seasons either side of the August cutoff (trap 5).
 
 Where the real snapshot and this file disagree about a trap's *shape*, the real
@@ -115,7 +118,8 @@ TEAMS = named(
         (1, "Arsenal", "Arsenal FC", "Arsenal", 57, 83),
         (2, "Liverpool", "Liverpool FC", "Liverpool", 64, 87),
         (3, "Chelsea", "Chelsea FC", "Chelsea", 61, 80),
-        (4, "Everton", "Everton FC", "Everton", 62, 72),
+        # A genuine ampersand, which html_unescape must leave alone (trap 15).
+        (4, "Brighton & Hove Albion", "Brighton & Hove Albion FC", "Brighton", 397, 220),
         (5, "Barcelona", "FC Barcelona", "Barcelona", 81, 71),
         (6, "Real Madrid", "Real Madrid CF", "Real Madrid", 86, 76),
     ],
@@ -133,7 +137,7 @@ STADIUMS = named(
         (1, "Emirates Stadium", "Hornsey Rd, London N7 7AJ", "England"),
         (2, "Anfield", "Anfield Rd, Liverpool L4 0TH", "England"),
         (3, "Stamford Bridge", "Fulham Rd, London SW6 1HS", "England"),
-        (4, "Goodison Park", "Goodison Rd, Liverpool L4 4EL", "England"),
+        (4, "Amex Stadium", "Village Way, Brighton BN1 9BL", "England"),
         (5, "Spotify Camp Nou", "C. d'Aristides Maillol, Barcelona", "Spain"),
         (6, "Estadio Santiago Bernabeu", "Av. de Concha Espina 1, Madrid", "Spain"),
     ],
@@ -168,7 +172,8 @@ PLAYERS = named(
         (2, 102, "Mohamed Salah", "F M S", 2, date(2024, 8, 17), None, True),
         (3, 103, "Cole Palmer", "AM L", 3, date(2024, 8, 17), date(2025, 1, 31), False),
         (4, 103, "Cole Palmer", "AM L", 1, date(2025, 2, 1), None, True),
-        (5, 105, "Jarrad Branthwaite", "D C", 4, date(2024, 8, 18), None, True),
+        # Stored exactly as Understat serves it: HTML-escaped (trap 15).
+        (5, 105, "Dara O&#039;Shea", "D C", 4, date(2024, 8, 18), None, True),
         (6, 106, "Robert Lewandowski", "F S", 5, date(2024, 8, 18), None, True),
     ],
 )

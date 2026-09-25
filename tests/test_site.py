@@ -57,7 +57,10 @@ def server(site_data: Path):
 
     The pages fetch JSON, so opening the files directly does not work — `file://`
     has no origin a fetch can use. That is true for a reviewer previewing locally
-    too, which is why CLAUDE.md §11 documents `python -m http.server -d site`.
+    too, which is why CLAUDE.md §11 documents `scripts/serve_site.py`.
+
+    This fixture is a plain `http.server`, unlike that script: each test gets a fresh
+    browser context, so there is no cache for a stale response to come out of.
     """
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
@@ -74,36 +77,53 @@ def server(site_data: Path):
         httpd.server_close()
 
 
-@pytest.fixture(scope="module")
-def browser_page(server):
-    """A headless Chromium page, or a skip if the browser was never downloaded."""
+# Both engines. A static site's only real test is a browser, and the two disagree
+# about enough to matter. The bug that prompted this was found by a reader on Firefox
+# while the suite ran Chromium alone — it turned out not to be engine-specific, but
+# the blind spot was real.
+BROWSERS = ["chromium", "firefox"]
+
+
+@pytest.fixture(scope="module", params=BROWSERS)
+def browser_page(request, server):
+    """A headless page, or a skip if that engine was never downloaded."""
     playwright = pytest.importorskip(
         "playwright.sync_api", reason="pytest-playwright not installed"
     )
+    engine = request.param
     with playwright.sync_playwright() as driver:
         try:
-            browser = driver.chromium.launch()
+            browser = getattr(driver, engine).launch()
         except Exception as exc:  # pragma: no cover - environment, not logic
-            pytest.skip(f"Chromium not available ({exc}). Run: uv run playwright install chromium")
+            pytest.skip(
+                f"{engine} not available ({type(exc).__name__}). "
+                f"Run: uv run playwright install --with-deps {engine}"
+            )
         page = browser.new_page(viewport={"width": 1280, "height": 900})
+
+        # Registered once rather than per navigation: the page is shared by the whole
+        # module, so re-adding listeners on every load would stack them up.
+        problems: list[str] = []
+        page.on(
+            "console",
+            lambda msg: (
+                problems.append(f"console.{msg.type}: {msg.text}") if msg.type == "error" else None
+            ),
+        )
+        page.on("pageerror", lambda err: problems.append(f"pageerror: {err}"))
+        page.problems = problems
+
         yield page
         with contextlib.suppress(Exception):
             browser.close()
 
 
 def open_page(page, base_url: str, path: str):
-    """Load one page, collecting console errors and uncaught exceptions."""
-    problems: list[str] = []
-    page.on(
-        "console",
-        lambda msg: (
-            problems.append(f"console.{msg.type}: {msg.text}") if msg.type == "error" else None
-        ),
-    )
-    page.on("pageerror", lambda err: problems.append(f"pageerror: {err}"))
+    """Load one page, and return whatever it logged while doing so."""
+    page.problems.clear()
     response = page.goto(f"{base_url}/{path}", wait_until="networkidle")
     assert response is not None and response.ok, f"{path} did not load"
-    return problems
+    return page.problems
 
 
 @pytest.mark.parametrize(("path", "tab"), PAGES)
@@ -121,10 +141,31 @@ def test_page_shows_the_snapshot_range(browser_page, server, path, tab):
 
 
 @pytest.mark.parametrize(("path", "tab"), PAGES)
+def test_page_answers_before_it_tabulates(browser_page, server, path, tab):
+    """The top of the page says what the data shows, in a sentence.
+
+    The point of the layout: a reader who stops after the first screen should leave
+    with a finding, not with a table they have to interpret. So every page renders a
+    filled-in answer line and a "what this means" block, both built from mart values.
+    """
+    open_page(browser_page, server, path)
+    answer = browser_page.locator("#answer").inner_text().strip()
+    assert len(answer) > 30, f"{path} has no answer sentence, got {answer!r}"
+    assert browser_page.locator("#answer .hl").count() >= 1, f"{path} highlights no figure"
+
+    # Compared case-insensitively: the heading is uppercased in CSS, and `inner_text`
+    # returns what is rendered rather than what the markup says.
+    meaning = browser_page.locator("#meaning").inner_text().strip()
+    assert "what this means" in meaning.lower(), f"{path} has no explanation block"
+    # Terms explain themselves rather than assuming the reader knows them.
+    assert browser_page.locator("#meaning .term").count() >= 1, f"{path} defines no terms"
+
+
+@pytest.mark.parametrize(("path", "tab"), PAGES)
 def test_page_marks_its_own_tab_as_current(browser_page, server, path, tab):
     open_page(browser_page, server, path)
-    current = browser_page.locator('.tabs a[aria-current="page"]').inner_text()
-    assert current == tab
+    current = browser_page.locator('.rail-nav a[aria-current="page"]').inner_text()
+    assert tab in current
 
 
 def test_league_table_renders_clubs(browser_page, server):
@@ -177,6 +218,85 @@ def test_shots_page_draws_a_pitch_with_markers(browser_page, server):
     browser_page.locator('#situation button[data-value="Penalty"]').click()
     browser_page.wait_for_timeout(150)
     assert browser_page.locator("#pitch svg.pitch").count() == 1
+
+
+@pytest.mark.parametrize(("path", "tab"), PAGES)
+def test_page_shows_how_to_read_its_visual(browser_page, server, path, tab):
+    """Definitions are not enough; the page has to teach the picture.
+
+    Each one carries a "How to read it" block: a labelled miniature drawn with the
+    same marks as the real visual, and worked examples naming real rows that are on
+    screen. A reader who has never seen a dot-and-ring plot should be able to read
+    one after this, which a glossary alone does not achieve.
+    """
+    open_page(browser_page, server, path)
+
+    guide = browser_page.locator("#guide")
+    assert guide.count() == 1, f"{path} has no guide block"
+    assert "how to read" in guide.inner_text().lower()
+
+    # The miniature is drawn, and it is labelled.
+    assert guide.locator("figure svg").count() == 1, f"{path} draws no example figure"
+    assert guide.locator("figure svg .fig-label").count() >= 2, f"{path} labels nothing"
+
+    # And the examples are substantial, not placeholders.
+    items = guide.locator(".guide-examples li")
+    assert items.count() >= 3, f"{path} gives too few worked examples"
+    assert all(len(items.nth(i).inner_text()) > 40 for i in range(items.count()))
+
+
+def test_league_guide_names_a_club_that_is_in_the_table(browser_page, server):
+    """The worked examples must describe the rows actually on screen.
+
+    Static prose would pass the test above while quietly describing a different
+    league or season, so this checks the first example names a club in the table.
+    """
+    open_page(browser_page, server, "index.html")
+    subject = browser_page.locator("#guide .guide-examples li b").first.inner_text()
+    teams = browser_page.locator("#rows td.name").all_inner_texts()
+    assert any(subject in team for team in teams), f"{subject!r} is not in this table"
+
+
+def test_a_stale_document_says_so_instead_of_going_blank(browser_page, server):
+    """The failure a reader actually hit, turned into a test.
+
+    A browser can hold an old copy of the HTML and fetch new JavaScript. The two then
+    disagree about which elements exist, and before this the symptom was a blank page
+    and `can't access property "textContent" ... is null` — which tells whoever is
+    looking at it nothing at all.
+
+    Simulated by deleting the elements the scripts expect *as the document is parsed*.
+    It has to be that early: module scripts are deferred, which runs them before
+    `DOMContentLoaded`, so removing the elements on that event would be too late to
+    stand in for a stale page.
+
+    Runs in its own browser context, because an init script cannot be unregistered
+    and would otherwise strip those elements from every test that came after.
+    """
+    context = browser_page.context.browser.new_context(viewport={"width": 1280, "height": 900})
+    try:
+        page = context.new_page()
+        page.add_init_script("""
+            const strip = () => {
+              for (const id of ['kicker', 'answer', 'meaning']) {
+                document.getElementById(id)?.remove();
+              }
+            };
+            new MutationObserver(strip).observe(document.documentElement || document, {
+              childList: true, subtree: true,
+            });
+            """)
+        page.goto(f"{server}/index.html", wait_until="networkidle")
+        page.wait_for_timeout(300)
+
+        banner = page.locator(".stale-banner")
+        assert banner.count() == 1, "a stale document rendered no warning"
+        assert "out of date" in banner.inner_text().lower()
+
+        # And the rest of the page still works: the table is the point of it.
+        assert page.locator("#rows tr").count() >= 2, "the table did not survive"
+    finally:
+        context.close()
 
 
 def test_pages_work_at_phone_width(browser_page, server):

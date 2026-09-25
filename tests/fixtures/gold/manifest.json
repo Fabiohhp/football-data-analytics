@@ -11,7 +11,7 @@
     "dim_players": {
       "file": "dim_players.parquet",
       "rows": 7,
-      "bytes": 1716
+      "bytes": 1718
     },
     "dim_referees": {
       "file": "dim_referees.parquet",
@@ -21,12 +21,12 @@
     "dim_stadiums": {
       "file": "dim_stadiums.parquet",
       "rows": 7,
-      "bytes": 1422
+      "bytes": 1447
     },
     "dim_teams": {
       "file": "dim_teams.parquet",
       "rows": 7,
-      "bytes": 1498
+      "bytes": 1527
     },
     "fact_matches": {
       "file": "fact_matches.parquet",

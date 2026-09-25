@@ -6,7 +6,7 @@
 
 select
     stadium_key,
-    stadium_name,
+    {{ html_unescape('stadium_name') }} as stadium_name,
     city,
     country,
     capacity,

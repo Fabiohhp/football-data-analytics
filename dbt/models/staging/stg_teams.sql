@@ -4,9 +4,10 @@
 
 select
     team_key,
-    canonical_name as team_name,
-    football_data_name,
-    understat_name,
+    -- §5 trap 15. A real ampersand survives: Brighton & Hove Albion is not escaped.
+    {{ html_unescape('canonical_name') }} as team_name,
+    {{ html_unescape('football_data_name') }} as football_data_name,
+    {{ html_unescape('understat_name') }} as understat_name,
     football_data_id,
     understat_id,
     loaded_at

@@ -43,7 +43,8 @@ export function showError(container, error) {
   const hint = el("code", "");
   hint.textContent =
     "uv run dbt build --project-dir dbt --profiles-dir dbt && " +
-    "uv run python scripts/export_site_data.py && uv run python -m http.server -d site";
+    "uv run python scripts/export_site_data.py && " +
+    "uv run python scripts/serve_site.py";
   box.append(hint);
   container.replaceChildren(box);
   console.error(error);
@@ -64,6 +65,18 @@ export function num(value, places = 0) {
   return value.toFixed(places);
 }
 
+/**
+ * A 0-1 probability written as a percentage.
+ *
+ * A unit change on a single value, in the same family as rounding — not a derived
+ * number. It exists because "0.81 xG" means nothing to a reader who has not met xG,
+ * while "goes in about 81 times in a hundred" does.
+ */
+export function asPercent(value) {
+  if (value === null || value === undefined) return "—";
+  return String(Math.round(value * 100));
+}
+
 /** Which way a gap points. The dead band keeps near-zero gaps visually neutral. */
 export function direction(gap, band = 0.5) {
   if (gap === null || gap === undefined) return "even";
@@ -79,7 +92,88 @@ export function prettyDate(iso) {
   });
 }
 
-/* --- page chrome --------------------------------------------------------- */
+/* --- the glossary ---------------------------------------------------------
+ *
+ * The dashboard is full of terms a reader may not have met. Rather than a page of
+ * definitions nobody opens, each term is marked up where it appears and explains
+ * itself on hover or focus. Defined once here so the same words mean the same thing
+ * on all four pages.
+ */
+
+export const GLOSSARY = {
+  xg: ["xG — expected goals",
+    "How likely a shot was to be scored, from 0 to 1, based on where and how it was taken. " +
+    "A team's xG for a match is its shots added up: 2.1 xG means the chances it created " +
+    "would, on average, be worth about two goals."],
+  npxg: ["npxG — non-penalty expected goals",
+    "The same, with penalties removed. A penalty is worth about 0.76 xG on its own, so " +
+    "including them mostly measures who takes the spot kicks rather than who creates chances."],
+  xpts: ["xPTS — expected points",
+    "The points a club would have been expected to take from each match given both sides' " +
+    "chances, added up over the season. A club on 60 points and 50 xPTS has collected ten " +
+    "more than its chances were worth."],
+  xa: ["xA — expected assists",
+    "The expected goals of the shots a player set up. It credits the pass, not the finish."],
+  ppda: ["PPDA — passes allowed per defensive action",
+    "How many passes the opposition completes before this club does something to stop them. " +
+    "Lower means more pressing, which is the opposite way round from most metrics."],
+  per90: ["Per 90",
+    "A rate, not a total: the figure a player would post over a full match. It lets a " +
+    "substitute and an ever-present be compared without rewarding whoever played more."],
+  percentile: ["Percentile",
+    "Where this figure sits among players in the same league and season who cleared the " +
+    "minutes floor. 90 means only one player in ten did better."],
+  floor: ["Minutes floor",
+    "The minimum minutes a player needs before appearing. Without one, somebody with " +
+    "thirty minutes and a lucky goal reads as the best finisher in Europe."],
+  gap: ["Points − xPTS",
+    "Points actually taken, minus the points the chances were worth. Positive means a club " +
+    "got more than it deserved on the balance of play — for one season, usually luck."],
+  finishing: ["npG − npxG (finishing)",
+    "Non-penalty goals scored, minus what those chances were worth. Positive means the " +
+    "player out-scored their chances."],
+  snapshot: ["Snapshot",
+    "Every figure here comes from one pinned export of the warehouse, so the numbers do " +
+    "not shift under you. This is the range of match dates it covers."],
+};
+
+/** Mark up a term so it explains itself. Returns a <button>, so it is keyboard-reachable. */
+export function term(key, text) {
+  const entry = GLOSSARY[key];
+  const node = el("button", "term", text ?? (entry ? entry[0].split(" — ")[0] : key));
+  node.type = "button";
+  if (!entry) return node;
+  const show = (x, y) => showDefinition(entry[0], entry[1], x, y);
+  node.addEventListener("pointerenter", (event) => show(event.clientX, event.clientY));
+  node.addEventListener("focus", () => {
+    const box = node.getBoundingClientRect();
+    show(box.left + box.width / 2, box.top);
+  });
+  node.addEventListener("pointerleave", hideTip);
+  node.addEventListener("blur", hideTip);
+  return node;
+}
+
+/**
+ * Turn the two bits of markup the explanations use into nodes:
+ * `[[xpts]]` / `[[xpts|expected points]]` become live glossary terms, and `**text**`
+ * becomes bold. Built as DOM nodes rather than innerHTML so a club name containing
+ * an ampersand or an apostrophe cannot turn into markup.
+ */
+export function withTerms(text) {
+  const fragment = document.createDocumentFragment();
+  let index = 0;
+  const pattern = /\[\[([a-z0-9]+)(?:\|([^\]]+))?\]\]|\*\*([^*]+)\*\*/g;
+  for (const match of text.matchAll(pattern)) {
+    if (match.index > index) fragment.append(text.slice(index, match.index));
+    fragment.append(match[3] !== undefined ? el("strong", "", match[3]) : term(match[1], match[2]));
+    index = match.index + match[0].length;
+  }
+  if (index < text.length) fragment.append(text.slice(index));
+  return fragment;
+}
+
+/* --- page chrome ----------------------------------------------------------- */
 
 const PAGES = [
   ["index.html", "League table"],
@@ -89,48 +183,89 @@ const PAGES = [
 ];
 
 const BADGE = `
-  <svg width="30" height="20" viewBox="0 0 30 20" aria-hidden="true">
-    <rect x="1" y="1" width="28" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/>
-    <line x1="15" y1="1" x2="15" y2="19" stroke="currentColor" stroke-width="1.6"/>
-    <circle cx="15" cy="10" r="3.4" fill="none" stroke="currentColor" stroke-width="1.6"/>
+  <svg width="22" height="15" viewBox="0 0 30 20" aria-hidden="true">
+    <rect x="1" y="1" width="28" height="18" rx="1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <line x1="15" y1="1" x2="15" y2="19" stroke="currentColor" stroke-width="1.8"/>
+    <circle cx="15" cy="10" r="3.4" fill="none" stroke="currentColor" stroke-width="1.8"/>
+  </svg>`;
+
+const THEME_ICON = `
+  <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+    <circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <path d="M8 1.6 A6.4 6.4 0 0 1 8 14.4 Z" fill="currentColor"/>
   </svg>`;
 
 /**
- * Build the top bar, including the snapshot's match_date range.
+ * The light/dark toggle.
  *
- * Every page shows that range (CLAUDE.md §9): a number on this dashboard is only
- * meaningful against the export it came from, so the range is chrome, not a detail
- * tucked into a footer.
+ * Dark is the default and light is the stored override, so the button only ever
+ * writes an explicit choice. Every read and write is wrapped: `localStorage` throws
+ * in a private window, and a theme button is not worth breaking a page over.
  */
-export function buildTopbar(current, meta) {
-  const bar = $("topbar");
-  if (!bar) return;
+function themeToggle() {
+  const button = el("button", "theme-toggle");
+  button.type = "button";
+  button.insertAdjacentHTML("afterbegin", THEME_ICON);
+  const caption = el("span", "", "");
+  button.append(caption);
 
-  const brand = el("a", "brand");
-  brand.href = "index.html";
-  brand.setAttribute("aria-label", "Big 5 Analytics, home");
-  brand.insertAdjacentHTML("afterbegin", BADGE);
-  brand.append("Big 5 Analytics");
+  const current = () => (document.documentElement.dataset.theme === "light" ? "light" : "dark");
+  const sync = () => {
+    const next = current() === "light" ? "dark" : "light";
+    caption.textContent = `${next} theme`;
+    button.setAttribute("aria-label", `Switch to ${next} theme`);
+  };
 
-  const nav = el("nav", "tabs");
-  nav.setAttribute("aria-label", "Pages");
-  for (const [href, label] of PAGES) {
-    const link = el("a", "", label);
-    link.href = href;
-    if (href === current) link.setAttribute("aria-current", "page");
-    nav.append(link);
+  button.addEventListener("click", () => {
+    const next = current() === "light" ? "dark" : "light";
+    document.documentElement.dataset.theme = next;
+    try {
+      localStorage.setItem("theme", next);
+    } catch (error) {
+      /* nothing to remember it with; the choice still applies to this page */
+    }
+    sync();
+  });
+
+  sync();
+  return button;
+}
+
+/**
+ * Fill the rail's fixed parts around whatever filters the page put in it.
+ *
+ * The snapshot range sits here, at the foot of every page (CLAUDE.md §9): a number
+ * on this dashboard only means something against the export it came from.
+ */
+export function buildRail(current, meta) {
+  const top = $("rail-top");
+  if (top) {
+    const brand = el("a", "brand");
+    brand.href = "index.html";
+    brand.setAttribute("aria-label", "Big 5 Analytics, home");
+    brand.insertAdjacentHTML("afterbegin", BADGE);
+    brand.append("Big 5 Analytics");
+
+    const nav = el("nav", "rail-nav");
+    nav.setAttribute("aria-label", "Pages");
+    PAGES.forEach(([href, label], index) => {
+      const link = el("a", "");
+      link.href = href;
+      link.append(el("span", "idx", String(index + 1).padStart(2, "0")), label);
+      if (href === current) link.setAttribute("aria-current", "page");
+      nav.append(link);
+    });
+    top.replaceChildren(brand, nav);
   }
 
-  const snapshot = el("div", "snapshot");
-  const range = meta.match_date_range;
-  snapshot.append(
-    el("span", "", "Snapshot"),
-    el("span", "", `${prettyDate(range.min)} – ${prettyDate(range.max)}`),
-  );
-
-  const wrap = el("div", "wrap");
-  wrap.append(brand, nav, snapshot);
-  bar.replaceChildren(wrap);
+  const foot = $("rail-foot");
+  if (foot) {
+    const range = meta.match_date_range;
+    const snapshot = el("div", "snapshot");
+    snapshot.append(el("b", "", "Snapshot"));
+    snapshot.append(term("snapshot", `${prettyDate(range.min)} – ${prettyDate(range.max)}`));
+    foot.replaceChildren(snapshot, themeToggle());
+  }
 }
 
 /** The same footer on every page, naming the mart the page read. */
@@ -138,9 +273,110 @@ export function buildFooter(martName) {
   const foot = $("foot");
   if (!foot) return;
   foot.append(
-    el("span", "", "Big 5 Analytics · Results from Football-Data.org, xG from Understat, via a pinned snapshot"),
+    el("span", "", "Results from Football-Data.org \u00b7 xG from Understat \u00b7 pinned snapshot"),
     el("span", "mono", martName),
   );
+}
+
+/**
+ * The top of the inverted pyramid: what happened, then what it means.
+ *
+ * `sentence` is built from mart columns by the page and may contain `[[term]]`
+ * markers; `paragraphs` explain the metric in plain words. Nothing here computes a
+ * number — the page passes values that a tested model produced (CLAUDE.md §9).
+ */
+export function setAnswer({ kicker, sentence, meaning = [], caveat = null }) {
+  // Every lookup is guarded. A page that is missing one of these should lose that
+  // one element, not throw halfway through `render()` and leave the table, the
+  // footer and everything after it unwritten — which is exactly what an unguarded
+  // `$("kicker").textContent` did, and it took a screenshot from a reader to find.
+  const heading = $("kicker");
+  if (heading && kicker !== undefined) heading.textContent = kicker;
+
+  const line = $("answer");
+  if (line && sentence !== undefined) line.replaceChildren(sentence);
+
+  const box = $("meaning");
+  if (!box) return;
+  const parts = [el("h2", "", "What this means")];
+  for (const text of meaning) {
+    const p = el("p", "");
+    p.append(withTerms(text));
+    parts.push(p);
+  }
+  if (caveat) {
+    const p = el("p", "caveat");
+    p.append(withTerms(caveat));
+    parts.push(p);
+  }
+  box.replaceChildren(...parts);
+}
+
+/**
+ * "How to read it": an annotated miniature of the visual, and worked examples.
+ *
+ * `setAnswer` says what the number is. This says how to *look* at the picture — a
+ * labelled copy of the visual grammar, then two or three real rows walked through in
+ * words. Definitions alone do not teach someone to read a dot-and-ring plot; being
+ * shown one club's row does.
+ *
+ * `examples` are `{ subject, text }`, built by the page from rows it selected. As
+ * everywhere else, the page inserts values a tested model produced (CLAUDE.md §9).
+ */
+export function setGuide({ figure = null, caption = null, examples = [] }) {
+  const box = $("guide");
+  if (!box) return;
+
+  const parts = [el("h2", "", "How to read it")];
+  const body = el("div", "guide-body");
+
+  if (figure) {
+    const holder = el("figure", "guide-figure");
+    holder.append(figure);
+    if (caption) {
+      const words = el("figcaption", "");
+      words.append(withTerms(caption));
+      holder.append(words);
+    }
+    body.append(holder);
+  }
+
+  if (examples.length) {
+    const list = el("ul", "guide-examples");
+    for (const { subject, text } of examples) {
+      const item = el("li", "");
+      if (subject) item.append(el("b", "", subject), " — ");
+      item.append(withTerms(text));
+      list.append(item);
+    }
+    body.append(list);
+  }
+
+  parts.push(body);
+  box.replaceChildren(...parts);
+}
+
+/* --- the annotated miniatures --------------------------------------------
+ * Each page draws a small, labelled copy of its own visual using the same marks
+ * the real one uses, so the legend is the thing itself rather than a description
+ * of it. Two helpers keep the label plumbing out of the page files.
+ */
+
+/** A text label inside a guide figure. */
+export function figureLabel(x, y, text, anchor = "start") {
+  const node = svg("text", { class: "fig-label", x, y, "text-anchor": anchor });
+  node.textContent = text;
+  return node;
+}
+
+/** A thin leader line from a label to the mark it names. */
+export function figureLeader(x1, y1, x2, y2) {
+  return svg("path", { class: "fig-leader", d: `M${x1},${y1} L${x2},${y2}` });
+}
+
+/** A highlighted number inside an answer sentence. */
+export function highlight(text, direction = "ahead") {
+  return el("span", `hl ${direction}`, text);
 }
 
 /* --- controls ------------------------------------------------------------ */
@@ -191,7 +427,11 @@ export function showTip(title, pairs, clientX, clientY) {
   }
   node.replaceChildren(el("div", "tip-title", title), grid);
   node.hidden = false;
+  place(node, clientX, clientY);
+}
 
+/** Keep a tooltip on screen: flip left, then below, rather than overflow. */
+function place(node, clientX, clientY) {
   const width = node.offsetWidth;
   const height = node.offsetHeight;
   let left = clientX + 16;
@@ -200,6 +440,15 @@ export function showTip(title, pairs, clientX, clientY) {
   if (top < 8) top = clientY + 16;
   node.style.left = `${Math.max(8, left)}px`;
   node.style.top = `${top}px`;
+}
+
+/** A term's definition, as prose rather than a label/value grid. */
+export function showDefinition(title, body, clientX, clientY) {
+  const node = tip();
+  if (!node) return;
+  node.replaceChildren(el("div", "tip-title", title), el("div", "tip-def", body));
+  node.hidden = false;
+  place(node, clientX, clientY);
 }
 
 export function hideTip() {
@@ -248,21 +497,49 @@ export function ticks(lo, hi, count = 5) {
 
 /* --- shared page startup ------------------------------------------------- */
 
+/* Every page is built around these. If one is missing, the document in the browser
+ * is not the one this script belongs with — almost always a cached copy. */
+const REQUIRED_IDS = ["rail-top", "rail-foot", "kicker", "answer", "meaning", "foot", "tip"];
+
+/**
+ * Check the page is the one this script expects, and say so plainly if not.
+ *
+ * A browser can hold an old copy of the HTML while fetching new JavaScript, and the
+ * two then disagree about what elements exist. Without this the symptom is a blank
+ * dashboard and a null property access, which says nothing useful to whoever is
+ * looking at it. With it, the page names the problem and the fix.
+ */
+function checkSkeleton() {
+  const missing = REQUIRED_IDS.filter((id) => !$(id));
+  if (!missing.length) return true;
+
+  const banner = el("div", "stale-banner");
+  banner.append(
+    el("strong", "", "This page is out of date with its scripts. "),
+    "Reload bypassing the cache — Ctrl+Shift+R, or Cmd+Shift+R on a Mac. ",
+    el("span", "mono", `missing: ${missing.join(", ")}`),
+  );
+  document.body.prepend(banner);
+  console.error(`Stale document: missing #${missing.join(", #")}`);
+  return false;
+}
+
 /**
  * Load meta + the league table (which every page uses for its pickers), build the
  * chrome, and hand back the data. One place for the boilerplate four pages share.
  */
 export async function startPage({ page, mart, container }) {
+  checkSkeleton();
   try {
     const [meta, leagueTable] = await Promise.all([
       loadJSON("meta.json"),
       loadJSON("league_table.json"),
     ]);
-    buildTopbar(page, meta);
+    buildRail(page, meta);
     buildFooter(mart);
     return { meta, leagueTable };
   } catch (error) {
-    buildTopbar(page, { match_date_range: { min: null, max: null } });
+    buildRail(page, { match_date_range: { min: null, max: null } });
     showError(container, error);
     throw error;
   }

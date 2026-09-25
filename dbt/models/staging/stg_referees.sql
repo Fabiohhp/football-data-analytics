@@ -8,7 +8,7 @@
 select
     referee_key,
     football_data_id,
-    referee_name,
+    {{ html_unescape('referee_name') }} as referee_name,
     nationality,
     loaded_at
 

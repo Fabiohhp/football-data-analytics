@@ -125,6 +125,12 @@ def export_league_table(connection: Any) -> list[dict[str, Any]]:
             # The honest gap: points counted over the matches that have an xPTS
             # (§5 trap 7). The mart does that; this only rounds it.
             "points_minus_xpts": "round(points_minus_xpts, 1)",
+            # Rank and band are mart-computed readings of that gap, so the page can
+            # say "widest of 20" and "well ahead" without deriving either.
+            "points_minus_xpts_rank": "points_minus_xpts_rank",
+            "xg_difference_rank": "xg_difference_rank",
+            "clubs_in_league": "clubs_in_league",
+            "gap_band": "gap_band",
             "xgd": "round(xg_difference, 1)",
             "xg_for": "round(xg_for, 1)",
             "xg_against": "round(xg_against, 1)",
@@ -191,6 +197,12 @@ def export_players(connection: Any, season: str) -> list[dict[str, Any]]:
             "shots": "shots",
             "np_goals_per_90": "round(np_goals_per_90, 2)",
             "npxg_per_90": "round(npxg_per_90, 2)",
+            # The percentile is what makes a rate readable — "is 0.78 good?" — and it
+            # is computed in the mart against a stated population, not here.
+            "np_goals_per_90_pct": "np_goals_per_90_percentile",
+            "npxg_per_90_pct": "npxg_per_90_percentile",
+            "xa_per_90_pct": "xa_per_90_percentile",
+            "shots_per_90_pct": "shots_per_90_percentile",
             "xa_per_90": "round(xa_per_90, 2)",
             "shots_per_90": "round(shots_per_90, 2)",
             # Finishing. The non-penalty version is the only one worth showing:

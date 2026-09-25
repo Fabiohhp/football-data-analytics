@@ -6,87 +6,83 @@
 <title>League table · Big 5 Analytics</title>
 <meta name="description" content="Points against expected points for the big-5 European leagues, from a pinned data snapshot.">
 <link rel="stylesheet" href="css/app.css">
+<script>
+  // Applied before first paint so the page never flashes the wrong theme. Dark is
+  // the default; localStorage only ever holds an explicit choice made by the toggle.
+  try {
+    var stored = localStorage.getItem("theme");
+    if (stored === "light" || stored === "dark") {
+      document.documentElement.dataset.theme = stored;
+    }
+  } catch (e) { /* private browsing: fall back to the dark default */ }
+</script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 
-<header class="topbar" id="topbar"></header>
-
-<main class="wrap">
-  <section class="head">
-    <p class="eyebrow" id="eyebrow"></p>
-    <h1>Who ran ahead of their expected points?</h1>
-    <p class="lede">
-      Points won against xPTS — the points each club's chances were worth by Understat's
-      model. A filled dot to the right of its ring means more points than the chances
-      suggested.
-    </p>
-  </section>
-
-  <div class="controls">
-    <div class="ctl">
-      <span class="ctl-label" id="league-label">League</span>
-      <div class="seg" id="league" role="group" aria-labelledby="league-label"></div>
-    </div>
-    <div class="ctl">
-      <label class="ctl-label" for="season">Season</label>
-      <span class="select"><select id="season"></select></span>
-    </div>
-    <div class="ctl">
-      <span class="ctl-label" id="sort-label">Sort by</span>
-      <div class="seg" id="sort" role="group" aria-labelledby="sort-label"></div>
-    </div>
-  </div>
-
-  <section class="tiles" id="tiles" aria-label="Summary"></section>
-
-  <section class="board" aria-labelledby="board-title">
-    <div class="board-head">
-      <h2 class="board-title" id="board-title">League table</h2>
-      <div class="legend">
-        <span><i class="key-dot ahead"></i>Points, ahead of xPTS</span>
-        <span><i class="key-dot behind"></i>Points, behind xPTS</span>
-        <span><i class="key-ring"></i>xPTS</span>
+<div class="shell">
+  <aside class="rail">
+    <div id="rail-top"></div>
+    <div class="rail-section">
+      <div class="rail-heading">Filters</div>
+      <div class="ctl">
+        <span class="ctl-label" id="league-label">League</span>
+        <div class="seg" id="league" role="group" aria-labelledby="league-label"></div>
+      </div>
+      <div class="ctl">
+        <label class="ctl-label" for="season">Season</label>
+        <span class="select"><select id="season"></select></span>
+      </div>
+      <div class="ctl">
+        <span class="ctl-label" id="sort-label">Sort by</span>
+        <div class="seg" id="sort" role="group" aria-labelledby="sort-label"></div>
       </div>
     </div>
-    <div class="table-scroll" id="table-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th class="name" scope="col">Team</th>
-            <th class="c-optional" scope="col">MP</th>
-            <th scope="col">Pts</th>
-            <th scope="col">xPTS</th>
-            <th scope="col">Pts − xPTS</th>
-            <th class="c-optional" scope="col">xGD</th>
-            <th class="chart" scope="col">
-              <span class="sr-only">Points and xPTS</span>
-              <div class="axis" id="axis" aria-hidden="true"></div>
-            </th>
-          </tr>
-        </thead>
-        <tbody id="rows"></tbody>
-      </table>
-    </div>
-    <div class="board-foot" id="board-foot"></div>
-  </section>
+    <div class="rail-foot" id="rail-foot"></div>
+  </aside>
 
-  <section class="note">
-    <h2>Luck or skill?</h2>
-    <p>
-      The gap between points and xPTS describes what happened, not why. Over one season a
-      gap this size is mostly noise: the analysis behind this dashboard found that a
-      club's first-half gap barely carries into its second half, and that the clubs
-      furthest ahead give up almost all of it.
-    </p>
-    <p>
-      xPTS is summed over the matches that have one. Where a club's
-      <span class="mono">MP</span> and its xPTS coverage differ, the gap is still
-      like-for-like: the points side counts only those same matches.
-    </p>
-  </section>
+  <main class="canvas" id="main">
+    <p class="kicker" id="kicker"></p>
+    <h1 class="answer" id="answer"></h1>
+    <div class="meaning" id="meaning"></div>
+    <section class="guide" id="guide"></section>
 
-  <footer class="foot" id="foot"></footer>
-</main>
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title" id="board-title">League table</h2>
+        <div class="legend">
+          <span><i class="key-dot ahead"></i>Points, ahead of xPTS</span>
+          <span><i class="key-dot behind"></i>Points, behind xPTS</span>
+          <span><i class="key-ring"></i>xPTS</span>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="table-scroll" id="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th class="name" scope="col">Team</th>
+                <th class="c-optional" scope="col">MP</th>
+                <th scope="col">Pts</th>
+                <th scope="col">xPTS</th>
+                <th scope="col">Pts − xPTS</th>
+                <th class="c-optional" scope="col">xGD</th>
+                <th class="chart" scope="col">
+                  <span class="sr-only">Points and xPTS</span>
+                  <div class="axis" id="axis" aria-hidden="true"></div>
+                </th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <div class="panel-foot" id="board-foot"></div>
+      </div>
+    </section>
+
+    <footer class="foot" id="foot"></footer>
+  </main>
+</div>
 
 <div class="tip" id="tip" role="tooltip" hidden></div>
 <script type="module" src="js/league.js"></script>

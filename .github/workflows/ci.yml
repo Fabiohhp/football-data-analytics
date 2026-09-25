@@ -127,11 +127,12 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
-      # --with-deps installs the system libraries Chromium needs, which the GitHub
-      # runner allows and a developer machine often does not. Locally the smoke
-      # tests skip themselves instead of failing when the browser cannot start.
-      - name: Install Chromium
-        run: uv run playwright install --with-deps chromium
+      # Both engines: the one reader-reported breakage came from Firefox while the
+      # suite ran Chromium alone. --with-deps installs the system libraries they need,
+      # which the GitHub runner allows and a developer machine often does not; locally
+      # the smoke tests skip themselves rather than fail when a browser cannot start.
+      - name: Install browsers
+        run: uv run playwright install --with-deps chromium firefox
 
       - name: Build the metrics layer
         run: uv run dbt build --project-dir dbt --profiles-dir dbt

@@ -20,6 +20,7 @@ from __future__ import annotations
 import contextlib
 import http.server
 import socket
+import sys
 import threading
 from functools import partial
 from pathlib import Path
@@ -29,6 +30,10 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SITE = REPO_ROOT / "site"
 SITE_DATA = SITE / "data"
+
+# The preview server's handler, so the tests serve with the same no-store headers.
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+from serve_site import NoCacheHandler  # noqa: E402
 
 PAGES = [
     ("index.html", "League table"),
@@ -59,14 +64,15 @@ def server(site_data: Path):
     has no origin a fetch can use. That is true for a reviewer previewing locally
     too, which is why CLAUDE.md §11 documents `scripts/serve_site.py`.
 
-    This fixture is a plain `http.server`, unlike that script: each test gets a fresh
-    browser context, so there is no cache for a stale response to come out of.
+    It serves with that script's `NoCacheHandler`. One browser page is shared by the
+    whole module, so without `no-store` Firefox revalidates a page it has already
+    loaded, gets `304 Not Modified`, and `response.ok` reads that as a failed load.
     """
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
 
-    handler = partial(http.server.SimpleHTTPRequestHandler, directory=str(SITE))
+    handler = partial(NoCacheHandler, directory=str(SITE))
     httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()

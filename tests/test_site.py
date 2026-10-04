@@ -40,7 +40,6 @@ PAGES = [
     ("team.html", "Team"),
     ("players.html", "Players"),
     ("shots.html", "Shots"),
-    ("predictions.html", "Predictions"),
 ]
 
 pytestmark = pytest.mark.site
@@ -262,39 +261,6 @@ def test_league_guide_names_a_club_that_is_in_the_table(browser_page, server):
     subject = browser_page.locator("#guide .guide-examples li b").first.inner_text()
     teams = browser_page.locator("#rows td.name").all_inner_texts()
     assert any(subject in team for team in teams), f"{subject!r} is not in this table"
-
-
-def test_predictions_page_draws_forecasts_and_calibration(browser_page, server):
-    """Part 3's predictions: a forecast bar per match and a calibration chart.
-
-    Runs on whatever is in site/data/predictions — Part 3's real export locally, the
-    synthetic fixture in CI (PREDICTIONS_DIR=tests/fixtures/predictions).
-    """
-    open_page(browser_page, server, "predictions.html")
-    assert browser_page.locator("#rows tr .probbar").count() >= 3, "no forecast bars"
-    assert browser_page.locator("#rows .probbar i.hit").count() >= 3, "the result is not marked"
-    assert browser_page.locator("#calibration svg .cal-dot").count() >= 3, "no calibration dots"
-    assert browser_page.locator("#calibration svg .cal-diagonal").count() == 1
-
-
-def test_predictions_page_switches_league(browser_page, server):
-    open_page(browser_page, server, "predictions.html")
-    first = browser_page.locator("#rows td.name").first.inner_text()
-    browser_page.locator('#league button[data-value="SA"]').click()
-    browser_page.wait_for_timeout(200)
-    assert browser_page.locator("#rows td.name").first.inner_text() != first
-
-
-def test_predictions_page_says_where_the_prospective_test_stands(browser_page, server):
-    """Before any match has been played since the freeze, the view says so —
-    an answer, not an empty table."""
-    open_page(browser_page, server, "predictions.html")
-    browser_page.locator('#period button[data-value="prospective"]').click()
-    browser_page.wait_for_timeout(200)
-    answer = browser_page.locator("#answer").inner_text().strip()
-    assert len(answer) > 30
-    assert browser_page.locator("#answer .hl").count() >= 1
-    assert browser_page.problems == []
 
 
 def test_a_stale_document_says_so_instead_of_going_blank(browser_page, server):

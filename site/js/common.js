@@ -1,4 +1,4 @@
-/* Shared helpers for all five pages.
+/* Shared helpers for all four pages.
  *
  * The one rule this file exists to make easy: **no metric logic in JavaScript**
  * (CLAUDE.md §9). Everything here loads, picks, sorts, formats or draws. Nothing
@@ -132,25 +132,6 @@ export const GLOSSARY = {
   finishing: ["npG − npxG (finishing)",
     "Non-penalty goals scored, minus what those chances were worth. Positive means the " +
     "player out-scored their chances."],
-  rps: ["RPS — ranked probability score",
-    "How far a forecast's three probabilities were from what happened, treating home win, " +
-    "draw and away win as ordered: 50% on a draw is closer to a home win than 50% on an " +
-    "away win. 0 is a perfect forecast; lower is better."],
-  calibration: ["Calibration",
-    "Whether probabilities come true as often as they say. Of all the matches a calibrated " +
-    "model gives 60%, about 60 in a hundred should go that way."],
-  holdout: ["Hold-out",
-    "A season kept aside while the model was built and scored once at the end, with " +
-    "settings already fixed — so the score could not have been tuned to it."],
-  validation: ["Validation season",
-    "The season used to choose between models and settings. Choosing there, and scoring " +
-    "somewhere else, keeps the choice from flattering the score."],
-  prospective: ["Prospective test",
-    "Scoring a model frozen at one moment on matches played after it. Nothing about those " +
-    "matches could have leaked into it, however the data was split."],
-  elo: ["Elo rating",
-    "A running strength rating per club, nudged after every result. The baseline a match " +
-    "model has to beat to be worth having."],
   snapshot: ["Snapshot",
     "Every figure here comes from one pinned export of the warehouse, so the numbers do " +
     "not shift under you. This is the range of match dates it covers."],
@@ -199,7 +180,6 @@ const PAGES = [
   ["team.html", "Team"],
   ["players.html", "Players"],
   ["shots.html", "Shots"],
-  ["predictions.html", "Predictions"],
 ];
 
 const BADGE = `

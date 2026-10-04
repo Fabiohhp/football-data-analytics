@@ -431,21 +431,6 @@ Pages, in build order:
 2. **Team** — rolling xG for and against, with results.
 3. **Players** — per-90 leaderboard with a minutes filter.
 4. **Shots** — shot map for a team or a player.
-5. **Predictions** — Part 3's match model: what it said before each match, and what
-   happened, with its calibration. Added in Part 3's phase 5.
-
-**The predictions page reads Part 3's output, not the marts.** Part 3
-(`../football-data-science`) fits and scores the models and writes display-ready JSON
-with its `scripts/export_predictions.py`; `export_site_data.py` here copies those files
-into `site/data/predictions/` unchanged — `PREDICTIONS_DIR`, default
-`../football-data-science/exports/predictions`. Every other rule below holds for it: no
-number is computed in `predictions.js`, the answer sentence uses Part 3's reported
-scores and interval, the worked examples are rows selected by sorting, and a missing
-export renders a message naming both commands rather than a blank page. CI has no Part
-3, so the page is smoke-tested on `tests/fixtures/predictions/`, a synthetic copy in the
-same format written by `tests/fixtures/make_predictions_fixture.py` — real predictions
-are derived data, and §13's publishing question covers them too. **If Part 3 changes its
-export format, change that generator in the same change.**
 
 Rules:
 
@@ -667,9 +652,7 @@ uv run dbt test --project-dir dbt --profiles-dir dbt     # tests only
 uv run dbt docs generate --project-dir dbt --profiles-dir dbt   # lineage + grains
 
 # --- the dashboard: needs the marts built first ------------------------------
-uv run python scripts/export_site_data.py    # marts -> site/data/*.json, plus Part 3's
-                                             #   predictions if ../football-data-science
-                                             #   has exported them (PREDICTIONS_DIR)
+uv run python scripts/export_site_data.py    # marts -> site/data/*.json
 uv run python scripts/serve_site.py          # then open http://127.0.0.1:8000
 uv run python scripts/check_site.py          # is the server serving site/? (see below)
 # The pages fetch JSON, so opening the HTML files directly does not work.

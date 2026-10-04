@@ -407,23 +407,6 @@ th.chart, td.chart { width: 34%; min-width: 180px; padding-inline: 0; }
 .pitch .shot.goal { fill: var(--ahead); fill-opacity: .72; stroke: var(--pitch); stroke-width: .18; stroke-opacity: .8; }
 .pitch .shot:hover { fill-opacity: 1; }
 
-/* --- predictions: forecast bars and the calibration chart ---------------
- * The three outcomes reuse the two semantic hues: home win is the home side
- * ahead (blue), away win behind (red), draw even (grey). A bar's segment widths are
- * the model's probabilities — a scale, like .pctbar, never a computed figure. */
-th.prob-col, td.prob-col { width: 30%; min-width: 150px; text-align: left; }
-.probbar { display: flex; width: 100%; height: 8px; margin-top: 6px; border-radius: 2px; overflow: hidden; background: var(--hair); }
-.probbar i { display: block; width: var(--w, 0%); background: var(--c); opacity: .5; }
-.probbar i.hit { opacity: 1; box-shadow: inset 0 0 0 1px var(--ink); }
-.probtxt { display: block; margin: 3px 0 5px; font-size: 10.5px; color: var(--muted); }
-.chart-svg .cal-diagonal { stroke: var(--hair-strong); stroke-width: 1; stroke-dasharray: 4 4; }
-.chart-svg .cal-line { fill: none; stroke: var(--c); stroke-width: 1.5; opacity: .7; }
-.chart-svg .cal-dot { fill: var(--c); stroke: var(--surface); stroke-width: 1; }
-.chart-svg .cal-ring { fill: none; stroke: var(--c); stroke-width: 1.3; opacity: .65; }
-.chart-svg .cal-seg { fill: var(--c); opacity: .5; }
-.chart-svg .cal-hit { fill: none; stroke: var(--ink); stroke-width: 1; }
-#calibration .chart-svg { max-width: 560px; margin-inline: auto; }
-
 /* --- footer, states, tooltip --------------------------------------------- */
 .foot {
   margin-top: 34px; padding-block: 13px 28px; border-top: 1px solid var(--hair);

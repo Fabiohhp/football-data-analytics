@@ -47,11 +47,10 @@ jobs:
       - name: Fixture is up to date with the contract
         run: |
           uv run python tests/fixtures/make_gold_fixture.py
-          uv run python tests/fixtures/make_predictions_fixture.py
-          if ! git diff --quiet -- tests/fixtures/gold tests/fixtures/predictions; then
+          if ! git diff --quiet -- tests/fixtures/gold; then
             echo "::error::The committed fixture differs from the generator's output."
             echo "Re-run: uv run python tests/fixtures/make_gold_fixture.py"
-            git --no-pager diff --stat -- tests/fixtures/gold tests/fixtures/predictions
+            git --no-pager diff --stat -- tests/fixtures/gold
             exit 1
           fi
 
@@ -113,15 +112,10 @@ jobs:
     # The static site, built from the fixture and loaded in a real browser. Its own
     # job because downloading Chromium is slow and nothing else needs it.
     #
-    # The predictions page reads Part 3's export, which CI does not check out; it
-    # runs on a synthetic copy in the same format (tests/fixtures/predictions).
-    #
     # This is the only test that catches what this site can actually get wrong — a
     # renamed JSON key, a selector typo, a module that throws on load. None of those
     # fail ruff, and none of them fail a dbt test.
     runs-on: ubuntu-latest
-    env:
-      PREDICTIONS_DIR: tests/fixtures/predictions
     steps:
       - uses: actions/checkout@v4
 

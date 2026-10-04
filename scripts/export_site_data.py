@@ -29,6 +29,7 @@ download the whole dataset to draw one team's shot map.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -245,6 +246,41 @@ def export_shots(connection: Any, team_key: int) -> list[dict[str, Any]]:
     )
 
 
+def predictions_dir() -> Path:
+    """Where Part 3's exported predictions are: ``PREDICTIONS_DIR``, or the sibling's.
+
+    A relative override resolves against this repository's root, the same rule as
+    ``GOLD_SNAPSHOT_DIR``. CI points it at ``tests/fixtures/predictions``, a synthetic
+    copy, because Part 3 is not checked out there.
+    """
+    override = os.environ.get("PREDICTIONS_DIR")
+    if not override:
+        return (REPO_ROOT / ".." / "football-data-science" / "exports" / "predictions").resolve()
+    path = Path(override).expanduser()
+    return (path if path.is_absolute() else REPO_ROOT / path).resolve()
+
+
+def copy_predictions() -> dict[str, int]:
+    """Copy Part 3's predictions JSON into the site, unchanged.
+
+    Part 3 (../football-data-science) fits the models, scores them and writes rows
+    ready to display (its CLAUDE.md §9). Nothing is recomputed or reshaped here — the
+    files are placed where the predictions page can fetch them. If Part 3 has not
+    exported, the page says which command is missing instead of going blank.
+    """
+    source = predictions_dir()
+    if not (source / "meta.json").exists():
+        print(f"  predictions: none at {source} — the predictions page will say so")
+        return {}
+    target = SITE_DATA / "predictions"
+    target.mkdir(parents=True, exist_ok=True)
+    written = {}
+    for path in sorted(source.glob("*.json")):
+        shutil.copyfile(path, target / path.name)
+        written[f"predictions/{path.name}"] = path.stat().st_size
+    return written
+
+
 def main() -> int:
     connection = marts.open_marts()
     manifest = connection.manifest
@@ -292,6 +328,7 @@ def main() -> int:
         "source": "Results from Football-Data.org, expected goals from Understat",
     }
     written["meta.json"] = write_json(SITE_DATA / "meta.json", meta)
+    written.update(copy_predictions())
 
     total = sum(written.values())
     biggest = max(written.items(), key=lambda kv: kv[1])

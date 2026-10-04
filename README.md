@@ -90,7 +90,8 @@ that would each have produced a plausible wrong number.
 
 ## The dashboard
 
-Four static pages over the same tested marts, in the shape of an analyst's console:
+Four static pages over the same tested marts, plus a fifth showing Part 3's match
+predictions, in the shape of an analyst's console:
 a left rail of filters beside the numbers, dark by default, mono-forward. No
 framework, no build step, no charting library, and no request to any other host at
 runtime — the fonts are vendored, so it works offline.
@@ -283,7 +284,7 @@ and commit that on its own.
 │   ├── models/{staging,intermediate,marts}/
 │   └── tests/                    singular tests: a wrong filter fails here
 ├── notebooks/                    one question each, outputs committed
-├── site/                         static dashboard: 4 pages, no framework
+├── site/                         static dashboard: 5 pages, no framework
 │   ├── css/app.css               the whole design system
 │   ├── js/                       common.js + one file per page
 │   └── vendor/fonts/             Archivo + IBM Plex Mono, vendored (OFL)

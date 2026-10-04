@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Predictions · Big 5 Analytics</title>
+<meta name="description" content="What a match model said before each match, and what happened — from Part 3, scored on matches it never saw.">
+<link rel="stylesheet" href="css/app.css">
+<script>
+  // Applied before first paint so the page never flashes the wrong theme. Dark is
+  // the default; localStorage only ever holds an explicit choice made by the toggle.
+  try {
+    var stored = localStorage.getItem("theme");
+    if (stored === "light" || stored === "dark") {
+      document.documentElement.dataset.theme = stored;
+    }
+  } catch (e) { /* private browsing: fall back to the dark default */ }
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="shell">
+  <aside class="rail">
+    <div id="rail-top"></div>
+    <div class="rail-section">
+      <div class="rail-heading">Filters</div>
+      <div class="ctl">
+        <span class="ctl-label" id="period-label">Matches</span>
+        <div class="seg" id="period" role="group" aria-labelledby="period-label"></div>
+      </div>
+      <div class="ctl">
+        <span class="ctl-label" id="league-label">League</span>
+        <div class="seg" id="league" role="group" aria-labelledby="league-label"></div>
+      </div>
+    </div>
+    <div class="rail-foot" id="rail-foot"></div>
+  </aside>
+
+  <main class="canvas" id="main">
+    <p class="kicker" id="kicker"></p>
+    <h1 class="answer" id="answer"></h1>
+    <div class="meaning" id="meaning"></div>
+    <section class="guide" id="guide"></section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title">Does 60% mean 60%?</h2>
+        <div class="legend">
+          <span><i class="key-dot ahead"></i>Home win</span>
+          <span><i class="key-dot even"></i>Draw</span>
+          <span><i class="key-dot behind"></i>Away win</span>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-body" id="calibration"></div>
+        <div class="panel-foot" id="calibration-foot"></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title" id="rows-title">Match by match</h2>
+        <div class="legend">
+          <span><i class="key-dot ahead"></i>Home</span>
+          <span><i class="key-dot even"></i>Draw</span>
+          <span><i class="key-dot behind"></i>Away</span>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th class="name" scope="col">Match</th>
+                <th class="c-optional" scope="col">Date</th>
+                <th scope="col">Score</th>
+                <th class="prob-col" scope="col">Model: home · draw · away</th>
+                <th class="c-optional" scope="col">Elo</th>
+                <th scope="col">On result</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <footer class="foot" id="foot"></footer>
+  </main>
+</div>
+
+<div class="tip" id="tip" role="tooltip" hidden></div>
+<script type="module" src="js/predictions.js"></script>
+</body>
+</html>

@@ -1,13 +1,14 @@
 # Secrets. Only .env.example is tracked.
 .env
 
-# Generated data. The Gold snapshot and the DuckDB store are rebuilt by
-# scripts/export_gold.py + dbt, and §13 of CLAUDE.md has not yet decided whether any
-# of it may be published. The directory itself is tracked through .gitkeep: DuckDB
-# will not create a missing parent directory, so without it `dbt build` fails on a
-# fresh clone with an IO error that points at the wrong thing.
+# Generated data. The DuckDB store is rebuilt by dbt. The Gold snapshot is committed, so
+# a fresh clone reproduces every number without Part 1; scripts/export_gold.py refreshes
+# it. The directory itself is tracked through .gitkeep: DuckDB will not create a missing
+# parent directory, so without it `dbt build` fails on a fresh clone with an IO error
+# that points at the wrong thing.
 data/*
 !data/.gitkeep
+!data/gold/
 
 # Dashboard JSON, written by scripts/export_site_data.py from the marts.
 site/data/

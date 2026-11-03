@@ -4,9 +4,9 @@ on:
   push:
   pull_request:
 
-# Nothing in CI can reach Part 1's warehouse, so every job runs against the
-# synthetic fixture in tests/fixtures/gold via GOLD_SNAPSHOT_DIR. That is also
-# the point: it proves a fresh clone works with no real data and no database.
+# Nothing in CI can reach Part 1's warehouse, so the jobs run against the synthetic
+# fixture in tests/fixtures/gold via GOLD_SNAPSHOT_DIR, which carries every trap on
+# purpose. One step also builds the committed real snapshot, the path a fresh clone takes.
 env:
   GOLD_SNAPSHOT_DIR: tests/fixtures/gold
 
@@ -53,6 +53,12 @@ jobs:
             git --no-pager diff --stat -- tests/fixtures/gold
             exit 1
           fi
+
+      # What a fresh clone does: the same models and tests on the committed snapshot.
+      - name: dbt build (on the committed snapshot)
+        env:
+          GOLD_SNAPSHOT_DIR: data/gold
+        run: uv run dbt build --project-dir dbt --profiles-dir dbt
 
   notebooks:
     # Committed outputs are what a reviewer reads on GitHub, and a notebook that

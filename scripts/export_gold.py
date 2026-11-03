@@ -50,6 +50,10 @@ class ContractDrift(RuntimeError):
     """Gold no longer matches the committed contract."""
 
 
+class EmptyWarehouse(RuntimeError):
+    """Gold holds no matches, so exporting it would replace a good snapshot with nothing."""
+
+
 def connection_string() -> str:
     """Build a libpq connection string from the GOLD_PG_* environment."""
     load_dotenv(REPO_ROOT / ".env")
@@ -103,6 +107,16 @@ def check_contract(actual: dict[str, list[gold.Column]]) -> None:
             f"{listing}\n\n"
             "Part 1's schema changed. Review the analyses this affects, then re-run "
             "with --write-contract and commit the contract diff on its own."
+        )
+
+
+def check_has_matches(con: duckdb.DuckDBPyConnection) -> None:
+    """Refuse an empty warehouse, before clear_previous() deletes the current snapshot."""
+    matches = con.execute(f"SELECT count(*) FROM {ATTACH_ALIAS}.gold.fact_matches").fetchone()[0]
+    if not matches:
+        raise EmptyWarehouse(
+            "gold.fact_matches is empty, so there is nothing to export and the current "
+            "snapshot was left as it is. Part 1 has to load data first (its README, 'Run it')."
         )
 
 
@@ -193,6 +207,7 @@ def main(argv: list[str] | None = None) -> int:
 
     check_contract(actual)
     print(f"Contract OK: {len(tables)} tables match contracts/gold_columns.json")
+    check_has_matches(con)
 
     clear_previous(out_dir)
     print(f"Exporting to {out_dir} ...")
@@ -215,6 +230,6 @@ def main(argv: list[str] | None = None) -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except ContractDrift as exc:
+    except (ContractDrift, EmptyWarehouse) as exc:
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc

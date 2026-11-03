@@ -34,7 +34,7 @@ portfolio/football-data/
 |-------|-------|-------|--------|
 | Part 1 — Data Engineering & Architecture | Ingestion, Airflow, Bronze/Silver/Gold, data quality | `../football-data-engineering` | Complete |
 | **Part 2 — Analytics & BI** | Metrics layer, analyses, dashboard | **this repository** | **Complete — 5 of 5 phases** |
-| Part 3 — Machine Learning | Match outcome / xG models | separate repository, later | Not started |
+| Part 3 — Machine Learning | Match outcome / xG models | `../football-data-science` | Complete |
 
 **The deliverable is insight a reviewer can read and reproduce** — not a
 pipeline, and not a model. The audience is someone hiring for analytics or data
@@ -450,8 +450,7 @@ Rules:
   the same way as the notebooks' mplsoccer plots (§5, trap 10).
 - **Every page shows the snapshot's `match_date` range.**
 - **Works at phone width.**
-- **`site/data/` is generated and gitignored**, like `data/`, until §13 decides
-  what may be published.
+- **`site/data/` is generated and gitignored**, like `data/analytics.duckdb`.
 - **Preview with `scripts/serve_site.py`, not `python -m http.server`.** The pages
   fetch JSON, so opening the HTML directly does not work — but the stock server also
   sends no `Cache-Control`, and browsers then reuse cached JavaScript without
@@ -602,7 +601,7 @@ football-data-analytics/
 │   │   ├── make_gold_fixture.py   # builds the fixture; deterministic, CI diffs it
 │   │   └── gold/              # tiny synthetic snapshot carrying every §5 trap
 │   └── test_*.py
-├── data/                      # gitignored except .gitkeep: gold/ snapshot, analytics.duckdb
+├── data/                      # gold/ snapshot committed; analytics.duckdb gitignored
 ├── pyproject.toml             # dependencies (uv) + ruff/black config; dev tools in [dev]
 ├── uv.lock                    # committed: the exact versions a reviewer will get
 ├── .python-version            # 3.12
@@ -635,7 +634,7 @@ uv run black --check .
 export GOLD_SNAPSHOT_DIR=tests/fixtures/gold
 uv run python tests/fixtures/make_gold_fixture.py    # rebuild it (deterministic)
 
-# --- export a real snapshot: needs only Part 1's PostgreSQL ------------------
+# --- refresh the snapshot: needs Part 1's PostgreSQL, holding data ----------
 cp .env.example .env
 (cd ../football-data-engineering && docker compose up -d postgres)
 uv run python scripts/export_gold.py
@@ -811,9 +810,9 @@ code, so a README figure cannot drift from the analysis it illustrates; screensh
 come from the real pages in headless Chromium. Both halves skip themselves when their
 inputs are missing.
 
-`docs/images/` is **committed**, unlike `data/` and `site/data/`. It is 1.5 MB of
-rendered output, not the dataset, and with hosting undecided (§13) it is the only way a
-reviewer sees the dashboard.
+`docs/images/` is **committed**, unlike `site/data/`. It is 1.5 MB of rendered output, and
+with hosting undecided (§13) it is the only way a reviewer sees the dashboard without
+running it.
 
 One accuracy fix worth remembering: the first draft claimed three documented traps had
 been wrong. Two were (§5 traps 6 and 13); the own-goal findings were *additions* to a
@@ -824,17 +823,15 @@ round three up from two.
 
 ## 13. Open decisions
 
-- **Publishing data.** Football-Data.org and Understat each have terms of use.
-  Check them before committing any snapshot or mart to a public repository, or
-  deploying a public dashboard. Until that is decided, `data/` is gitignored and
-  CI runs on the synthetic fixture.
-- **Dashboard hosting.** GitHub Pages, or any static host, serves the site for
-  free — but publishing the site publishes its JSON files, which are the data
-  itself and can be downloaded, so this waits on the decision above.
-  Screenshots and a short GIF in the README are the fallback.
+- **Publishing data: decided.** The snapshot in `data/gold/` is committed, so anyone
+  can reproduce every number without Part 1. Football-Data.org and Understat each have
+  terms of use; the README carries the attribution Football-Data.org requires and says
+  the data is not under the code's license. CI still runs on the synthetic fixture, and
+  builds the snapshot in one step.
+- **Dashboard hosting.** GitHub Pages, or any static host, serves the site for free.
+  Not done yet; screenshots in the README are the fallback.
 
-  **This is the one thing phase 4 did not finish, and deliberately so** — it is a
-  licensing judgement, not a technical one. The site is built so that either answer
+  The site is built so that either answer
   works with no rework: `site/data/` is gitignored, the fonts are vendored so
   nothing is fetched at runtime, and the whole thing is static files that any host
   serves as-is. Deploying is `export_site_data.py` plus a copy; not deploying costs
@@ -867,4 +864,4 @@ A piece of work is complete when:
 - ❌ Do not add npm, a JavaScript framework or a build step to `site/`.
 - ❌ Do not turn null xG into 0, or impute stats that Gold does not carry.
 - ❌ Do not make causal claims from correlations.
-- ❌ Do not commit `.env` or `data/` (until §13 decides otherwise).
+- ❌ Do not commit `.env`, or anything in `data/` other than the `gold/` snapshot.

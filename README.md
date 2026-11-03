@@ -1,20 +1,23 @@
 # Football Analytics — expected goals, and what they are worth
 
+[![CI](https://github.com/Fabiohhp/football-data-analytics/actions/workflows/ci.yml/badge.svg)](https://github.com/Fabiohhp/football-data-analytics/actions/workflows/ci.yml)
+
 **Two questions about expected goals, answered from two complete seasons of the big-5
 European leagues, with a tested metrics layer and a dashboard behind them.**
 
-This is Part 2 of a three-part portfolio. Part 1 built the pipeline; this repository
-turns its warehouse into answers.
+This is Part 2 of a three-part portfolio. Part 1 built the pipeline, this repository
+turns its warehouse into answers, and Part 3 asks the predictive version of those
+questions.
 
-| Part | Scope | Repository | Status |
-|------|-------|------------|--------|
-| 1 — Data Engineering | Ingestion, Airflow, Bronze/Silver/Gold, data quality | [`football-data-engineering`](../football-data-engineering) | Complete |
-| **2 — Analytics & BI** | Metrics layer, analyses, dashboard | **this repository** | **Complete** |
-| 3 — Machine Learning | Match outcome / xG models | separate, later | Not started |
+| Part | Scope | Repository |
+|------|-------|------------|
+| 1 — Data Engineering | Ingestion, Airflow, Bronze/Silver/Gold, data quality | [`football-data-engineering`](https://github.com/Fabiohhp/football-data-engineering) |
+| **2 — Analytics & BI** | **Metrics layer, analyses, dashboard** | **this repository** |
+| 3 — Machine Learning | Match outcome and xG models, evaluation | [`football-data-science`](https://github.com/Fabiohhp/football-data-science) |
 
-**You do not need Part 1 to read this.** Every number comes from a pinned Parquet
-snapshot, and CI runs against a synthetic fixture — a fresh clone needs no database
-and no credentials.
+**You do not need Part 1 to read this or to reproduce it.** Every number comes from a
+Parquet snapshot committed in [`data/gold/`](data/gold), and CI also runs on a synthetic
+fixture. A fresh clone needs no database and no credentials.
 
 ---
 
@@ -106,9 +109,8 @@ Rates carry their **league percentile** as a bar, because "0.78 npxG per 90" doe
 tell a reader whether that is good — and the percentile is computed in dbt against a
 stated population, not in the browser.
 
-Hosting is an open decision ([§13](CLAUDE.md)): publishing the site publishes its
-JSON, which is the data itself, and the source terms have not been settled. So these
-are screenshots of the real thing, generated from the real pages.
+The site is not hosted. These are screenshots of the real thing, generated from the real
+pages, and [a few commands](#run-it-yourself) serve it locally from the committed snapshot.
 
 | | |
 |---|---|
@@ -171,7 +173,7 @@ tables are exact in all five leagues — Liverpool 84, Barcelona 88, Napoli 82, 
 82, PSG 84, with correct goal differences — and top scorers match: Mbappé 31, Salah
 29 with 18 assists, Kane 26.
 
-**16 dbt models · 131 dbt tests · 119 Python tests**, all green on the real snapshot
+**16 dbt models · 137 dbt tests · 160 Python tests**, all green on the real snapshot
 and on the fixture.
 
 ---
@@ -203,9 +205,13 @@ everything else reads it — a calculation anywhere else means a mart is missing
 **the snapshot is pinned**, so an analysis does not change its answer because the
 pipeline loaded another day.
 
-Why a Parquet snapshot rather than querying Part 1 live, why a static site rather than
-Streamlit or Metabase, and why dbt for sixteen models: [`CLAUDE.md`](CLAUDE.md) §3 and
-§6 give the reasoning, including the options rejected.
+**Why a Parquet snapshot rather than querying Part 1 live?** Every reader would have to
+start Part 1's whole stack, and results would shift each time the pipeline loaded another
+day. **Why a static site rather than Streamlit or Metabase?** Metabase needs a running
+server and leaves none of the work visible in the repository; Streamlit can only be themed
+so far, and free hosting puts idle apps to sleep. Static files load at once from any host.
+**Why dbt for sixteen models?** Each metric is defined once in SQL, with tests, docs and
+lineage.
 
 ### The data
 
@@ -217,6 +223,10 @@ and 94,034 shots**: the complete 2024/25 and 2025/26 seasons plus 2026/27 to dat
 Every analysis cites its snapshot's exact export time and `match_date` range from
 `manifest.json`.
 
+Football data provided by the Football-Data.org API. Expected-goals, player and shot data
+come from [Understat](https://understat.com/). The data belongs to its providers, under
+their terms, and is not covered by this repository's MIT License.
+
 ---
 
 ## Run it yourself
@@ -225,24 +235,17 @@ Every analysis cites its snapshot's exact export time and `match_date` range fro
 uv sync --extra dev
 ```
 
-Everything below works with no database except the export itself.
+Everything below works from a fresh clone, with no database and no credentials, and gives
+the numbers in this README.
 
 ```bash
-# --- tests, lint, format: no data required ------------------------------------
+# --- build the metrics layer on the committed snapshot -------------------------
+uv run dbt build --project-dir dbt --profiles-dir dbt
+
+# --- tests, lint, format -------------------------------------------------------
 uv run pytest -q
 uv run ruff check .
 uv run black --check .
-
-# --- work against the synthetic fixture instead of real data -----------------
-export GOLD_SNAPSHOT_DIR=tests/fixtures/gold
-
-# --- export a real snapshot (needs Part 1's database, nothing else) ----------
-cp .env.example .env     # defaults match Part 1's docker-compose
-(cd ../football-data-engineering && docker compose up -d postgres)
-uv run python scripts/export_gold.py
-
-# --- build the metrics layer (works on the fixture or a real snapshot) -------
-uv run dbt build --project-dir dbt --profiles-dir dbt
 
 # --- read the analyses --------------------------------------------------------
 uv run jupyter lab
@@ -262,9 +265,21 @@ The browser smoke tests run in Chromium and Firefox, need them installed once pe
 machine (`uv run playwright install --with-deps chromium firefox`), and skip
 themselves without.
 
-If Part 1's schema has changed, the export refuses to run and names every difference.
-Review what it affects, then `uv run python scripts/export_gold.py --write-contract`
-and commit that on its own.
+To run everything on the synthetic fixture instead, `export GOLD_SNAPSHOT_DIR=tests/fixtures/gold`
+first and build again.
+
+To refresh the snapshot from Part 1, once its warehouse holds data:
+
+```bash
+cp .env.example .env     # defaults match Part 1's docker-compose
+(cd ../football-data-engineering && docker compose up -d postgres)
+uv run python scripts/export_gold.py
+```
+
+If that warehouse is empty, the export refuses to run and leaves the snapshot as it is. If
+Part 1's schema has changed, it refuses too and names every difference. Review what it
+affects, then `uv run python scripts/export_gold.py --write-contract` and commit that on
+its own.
 
 ---
 
@@ -296,7 +311,8 @@ and commit that on its own.
 ├── tests/
 │   ├── fixtures/make_gold_fixture.py   the synthetic snapshot CI runs on
 │   └── test_*.py
-└── data/, site/data/             gitignored: snapshot, DuckDB store, dashboard JSON
+├── data/gold/                    the committed snapshot, with its manifest
+└── data/analytics.duckdb, site/data/   gitignored: DuckDB store, dashboard JSON
 ```
 
 ---
@@ -314,15 +330,24 @@ and commit that on its own.
 - **Predictive modelling is out of scope** — that is Part 3. This repository explains
   what happened; it does not forecast. Both analyses stop exactly where a train/test
   split would begin.
-- **`data/` and `site/data/` are gitignored.** Football-Data.org and Understat each
-  have terms of use, and whether any snapshot or dashboard JSON may be published is an
-  open decision ([`CLAUDE.md`](CLAUDE.md) §13) — which is why the dashboard is built
-  but not deployed. Until that is settled, CI runs on the synthetic fixture.
+- **The snapshot is committed so the numbers can be reproduced.** It holds data from
+  Football-Data.org and Understat, which belongs to them under their own terms of use.
 
-## What is next
+## Where this leads
 
-Part 3 picks up exactly where question 1 stops: xG difference adds information about
-the next half-season, so the question becomes whether it can *predict* unseen matches
-— with a train/test split, a baseline to beat, and the same rule that every number is
-defined once and tested. Predictions will reach the dashboard the same way these
-numbers did: as pre-computed JSON, never a model running live.
+[Part 3](https://github.com/Fabiohhp/football-data-science) picks up exactly where
+question 1 stops: xG difference adds information about the next half-season, so can it
+*predict* unseen matches? With walk-forward splits, baselines to beat and one season held
+out, Dixon-Coles fitted to xG scores best and still cannot be told apart from an Elo
+rating.
+
+## Author
+
+Fábio Henrique Peixe ([LinkedIn](https://www.linkedin.com/in/f%C3%A1bio-henrique-peixe/)). Also by
+the author: [`football-scouting`](https://github.com/Fabiohhp/football-scouting), a recruitment
+back-test on StatsBomb event data.
+
+## License
+
+The code is released under the [MIT License](LICENSE). The data belongs to its providers and is
+used under their terms.
